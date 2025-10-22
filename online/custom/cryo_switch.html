@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html class="mcss" lang="en">
+
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="midas.css">
+<script src="controls.js"></script>
+<script src="midas.js"></script>
+<script src="mhttpd.js"></script>
+<script src="mhistory.js"></script>
+
+<style>
+
+.mydiv {
+cursor: pointer;
+color:#0000FF;
+}
+.mydiv:link { color:#0000FF; text-decoration:none }
+.mydiv:visited { color:#800080; text-decoration:none }
+.mydiv:hover { color:#0000FF; text-decoration:underline }
+.mydiv:active { color:#0000FF; text-decoration:underline }
+.mydiv:focus { color:#0000FF; text-decoration:none; }
+
+input[type=number] {
+   font-size: 100%;
+}
+
+input[type=number][disabled]{color:transparent; background-color:transparent; border-width: 0px;}
+
+</style>
+
+<script>
+
+window.onload = function() {
+
+  mhttpd_init('Cryogenic Switch');
+  mhistory_init();
+
+}
+  
+function moveTo(id){
+
+  var paths = ["/Equipment/CryoSwitch/Variables/C_set"];
+
+  mjsonrpc_db_paste(paths,[id]).then(function(rpc) {
+  }).catch(function(error) {
+          mjsonrpc_error_alert(error);
+  });
+
+}
+
+</script>
+
+
+<title>Cryogenic Switch</title>
+
+<style>
+.mtable td {
+padding: 8px;
+}
+</style>
+
+</head>
+
+<body class="mcss">
+
+  <div id="mheader"></div>
+  <div id="msidenav"></div>
+
+  <div id="mmain">
+    <table class="mtable" style="font-size:18px">
+      <tr>
+    	<th class="mtableheader" id="page_title" colspan="4">Cryogenic Switch<th/>
+      </tr>
+      <tr>
+	<td colspan="4" style="vertical-align:center">
+	  <table class="mtable" style="font-size:18px">
+	    <tr align="center">
+	      <td width="200">Current Position</td><td width="200" style="font-weight:bold;color:green"><div class="modbvalue" data-format="f0" data-odb-path="/Equipment/CryoSwitch/Variables/C_state"></div></td>
+	    </tr>
+	  </table>
+	</td>
+      </tr>
+      <tr>
+	<td><input class="mbutton" id="btnP0" type="button" value="C-1" onclick="moveTo(1)" style="padding: 7px 20px;font-size:18px;margin:5px"/>
+	<td><input class="mbutton" id="btnP1" type="button" value="C-2" onclick="moveTo(2)" style="padding: 7px 20px;font-size:18px;margin:5px"/>
+	
+      </tr>
+    </table>
+    
+  </div>
+
+
+</body>
+</html>

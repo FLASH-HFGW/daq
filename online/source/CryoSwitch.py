@@ -86,11 +86,14 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
         
     def readout_func(self):
         
-        cset = client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"))
-        cstatus = client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"))
+        equip_name = "CryoSwitch"
+        cset = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"))
+        cstatus = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"))
+        chan1 = self.tti.ch1.channel
         
         if cset == cstatus:
             pass
+        
         
         elif cset==1 and cstatus==2:
             
@@ -104,7 +107,7 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
             self.tti.write(f"OP{chan1} 0")
             self.releController.write(0xff)
            
-            client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 1) 
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 1) 
             self.client.msg("Switch has been changed to C-1.")
         
         elif cset==2 and cstatus==1:
@@ -117,7 +120,7 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
             self.tti.write(f"OP{chan1} 0")
             self.releController.write(0xff)
             
-            client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 2)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 2)
             self.client.msg("Switch has been changed to C-2.")
             
         self.set_status("Running")   

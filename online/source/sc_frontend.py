@@ -1,3 +1,4 @@
+#!/usr/bin/python3.9
 import midas
 import midas.frontend
 import midas.event
@@ -126,8 +127,11 @@ class MyPeriodicEquipment(midas.frontend.EquipmentBase):
             data = [float(item) for item in datas[1:]]
             # Crea un banco con i dati per formati vedi: https://bitbucket.org/tmidas/midas/src/develop/python/midas/__init__.py
             event.create_bank("MERC", midas.TID_FLOAT, data)
+            #self.client.odb_set("Equipment/SCFrontend/Variables/T_Merc2[0]", data[2])
+            #self.client.odb_set("Equipment/SCFrontend/Variables/T_Merc2[1]", data[8])
             # self.client.odb_set("/pyexample", concatenate_arrays_to_json(self.header_M, data))
-        except:
+        except Exception as e:
+            print(e)
             self.client.msg("Error reading Mercury datasets")
             pass
             

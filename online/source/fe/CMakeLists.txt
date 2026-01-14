@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(quax_fe)
+project(cold_fe)
 
 add_compile_options(-Wall -O3)
 
@@ -28,9 +28,9 @@ endif()
 message(STATUS "${PROJECT_NAME}: MIDASSYS: ${MIDASSYS}")
 
 # link against mfe.cxx and mfed.cxx frameworks
-add_executable(quax_fe.exe quax_fe.cxx)
+add_executable(cold_fe.exe cold_fe.cxx)
 
-target_link_libraries(quax_fe.exe midas::mfe z spcm_linux pthread rt)
+target_link_libraries(cold_fe.exe midas::mfe z spcm_linux pthread rt)
 
 
-install(TARGETS quax_fe.exe DESTINATION .)
+install(TARGETS cold_fe.exe DESTINATION .)

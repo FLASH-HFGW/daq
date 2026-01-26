@@ -27,10 +27,14 @@ endif()
 #forse era più facile find_package(Midas REQUIRED PATHS $ENV{MIDASSYS})
 message(STATUS "${PROJECT_NAME}: MIDASSYS: ${MIDASSYS}")
 
+#Add driver lib to path for compilation
+link_directories("/home/cold/daq/online/driver/Spectrum_NetBox/")
+
+add_executable(cold_fe cold_fe.cxx)
+target_include_directories(cold_fe PUBLIC "/home/cold/daq/online/driver/Spectrum_NetBox/")
+
 # link against mfe.cxx and mfed.cxx frameworks
-add_executable(cold_fe.exe cold_fe.cxx)
-
-target_link_libraries(cold_fe.exe midas::mfe z spcm_linux pthread rt)
+target_link_libraries(cold_fe midas::mfe z spcm_linux pthread rt)
 
 
-install(TARGETS cold_fe.exe DESTINATION .)
+install(TARGETS cold_fe DESTINATION .)

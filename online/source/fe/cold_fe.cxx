@@ -185,8 +185,6 @@ INT frontend_init()
 
   printf ("Found: %s sn %05d\n", acCardType, lSerialNumber);
 
-  hFile = fopen ("fileDati.txt", "w");
-
   return SUCCESS;
 }
 
@@ -212,6 +210,8 @@ INT begin_of_run(INT run_number, char *error)
 	  myfile.close();
   }
 
+  printf("Setting file up\n")
+  hFile = fopen ("fileDati.txt", "w");
   /* put here clear scalers etc. */
 
   // do a simple standard setup

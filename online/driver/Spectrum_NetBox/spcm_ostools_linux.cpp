@@ -12,7 +12,7 @@ toosl functions that differ from OS to OS:
 **************************************************************************
 */
 
-#include "../../c_header/dlltyp.h"
+#include "dlltyp.h"
 
 #include "spcm_oswrap.h"
 #include "spcm_ostools.h"

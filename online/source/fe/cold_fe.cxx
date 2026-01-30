@@ -231,10 +231,10 @@ INT begin_of_run(INT run_number, char *error)
   spcm_dwSetParam_i32 (hCardDigi, SPC_TRIG_EXT0_MODE,  SPC_TM_POS);            // trigger on positive edge
   spcm_dwSetParam_i32 (hCardDigi, SPC_TRIG_EXT0_LEVEL0,400);                  // trigger level in mV
   spcm_dwSetParam_i32 (hCardDigi, SPC_TRIG_ANDMASK,   0);                     // ...
-  spcm_dwSetParam_i32 (hCardDigi, SPC_CLOCKMODE,      SPC_CM_EXTREFCLOCK);    // clock mode internal PLL
+  /*spcm_dwSetParam_i32 (hCardDigi, SPC_CLOCKMODE,      SPC_CM_EXTREFCLOCK);    // clock mode internal PLL
   spcm_dwSetParam_i32 (hCardDigi, SPC_REFERENCECLOCK,  10000000);              // external clock frequency
   spcm_dwSetParam_i32 (hCardDigi, SPC_CLOCKOUT,        0);                     // no clock output
-  spcm_dwSetParam_i32 (hCardDigi, SPC_CLOCK_THRESHOLD, 1);                     // clock threshold, in mV
+  spcm_dwSetParam_i32 (hCardDigi, SPC_CLOCK_THRESHOLD, 1);                     // clock threshold, in mV*/
 
 
   spcm_dwSetParam_i64 (hCardDigi, SPC_SAMPLERATE, llSamplerate);

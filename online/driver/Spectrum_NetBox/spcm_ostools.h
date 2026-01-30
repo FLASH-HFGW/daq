@@ -20,7 +20,7 @@ tools functions that differ from OS to OS:
 #ifndef SPCM_OSTOOLS_H
 #define SPCM_OSTOOLS_H
 
-#include "../../c_header/dlltyp.h"
+#include "dlltyp.h"
 #include "spcm_oswrap.h"
 
 

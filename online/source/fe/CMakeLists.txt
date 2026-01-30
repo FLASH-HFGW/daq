@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.15)
 project(cold_fe)
 
 add_compile_options(-Wall -O3)
@@ -34,7 +34,7 @@ add_executable(cold_fe cold_fe.cxx)
 target_include_directories(cold_fe PUBLIC "/home/cold/daq/online/driver/Spectrum_NetBox/")
 
 # link against mfe.cxx and mfed.cxx frameworks
-target_link_libraries(cold_fe midas::mfe z spcm_linux pthread rt)
+target_link_libraries(cold_fe midas::mfe z spcm_linux spcm_ostools_linux pthread rt)
 
 
 install(TARGETS cold_fe DESTINATION .)

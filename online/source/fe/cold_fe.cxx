@@ -44,9 +44,9 @@ using namespace std;
 /*-- Globals -------------------------------------------------------*/
 
 /* The frontend name (client name) as seen by other MIDAS clients   */
-char *frontend_name = "cold_daq";
+char *frontend_name = (char*)"cold_daq";
 /* The frontend file name, don't change it */
-char *frontend_file_name = __FILE__;
+char *frontend_file_name = (char*)__FILE__;
 
 /* frontend_loop is called periodically if this variable is TRUE    */
 BOOL frontend_call_loop = FALSE;
@@ -151,20 +151,24 @@ int64       llAvailUser, llPCPos;	//data
 uint64      qwTotalMem = 0;
 uint64      qwToTransfer =0;
 /* Size of mirror buffer on the PC*/
-int64       llBufferSize =	GIGA_B(1);
+int64       llBufferSize =	GIGA_B(3);
 /* Size of chunck of data after which the card signals the data is available*/
-int32       lNotifySize =	MEGA_B(32);
-uint64      llLen = 0;
+int32       lNotifySize =	MEGA_B(10);
+int64      llLen = 0;
 /* Sampling rate of card*/
 int64       llSamplerate =  MEGA(5);
 
-FILE* hFile = NULL;
-
+//FILE* hFile = NULL;
+HNDLE hDBc;
 
 /*-- Frontend Init -------------------------------------------------*/
 
 INT frontend_init()
 {
+
+  /*Attach to ODB */
+  
+  cm_get_experiment_database(&hDBc, NULL);
   /* put any hardware initialization here */
 
   hCardDigi = spcm_hOpen ("TCPIP::192.168.3.109::inst0::INSTR");
@@ -210,8 +214,8 @@ INT begin_of_run(INT run_number, char *error)
 	  myfile.close();
   }
 
-  printf("Setting file up\n")
-  hFile = fopen ("fileDati.txt", "w");
+  //printf("Setting file up\n");
+  //hFile = fopen ("fileDati.txt", "w");
   /* put here clear scalers etc. */
 
   // do a simple standard setup
@@ -264,7 +268,7 @@ INT begin_of_run(INT run_number, char *error)
 INT end_of_run(INT run_number, char *error)
 {
  return StopAcq();
- fclose(hFile);
+ //fclose(hFile);
 }
 
 /*-- Pause Run -----------------------------------------------------*/
@@ -357,13 +361,15 @@ INT read_event(char *pevent, INT off)
   // we take care not to go across the end of the buffer, handling the wrap-around
   if ((llPCPos + llLen) >= llBufferSize) llLen = llBufferSize - llPCPos;
 
-  fwrite( ((char*)pDigiMem)+llPCPos, llLen, 1, hFile);
-  memcpy(pdata16,pDigiMem+llPCPos/2,llLen);
+  //cout<<llPCPos<<endl;
+  db_set_value(hDBc,0,"Equipment/NetBox/Variables/llPCPos",&llPCPos, sizeof(llPCPos),1,TID_INT64);
+  //fwrite( ((char*)pDigiMem)+llPCPos, llLen, 1, hFile);
+  memcpy(pdata16,((char*)pDigiMem)+llPCPos,llLen);
 
   // buffer is free for DMA transfer again
   spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)llLen);
 
- 
+  bk_close(pevent,(char*)pdata16+llLen);
   //////MAYBE : Here checks if the header structure of the bank is as the initialisation done few lines above
   if (bk_size(pevent)==defaultEvSize ) { return 0; }
   return bk_size(pevent);

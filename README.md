@@ -1,2 +1,2 @@
 # daq
-flash frontend 
+FLASH front end 

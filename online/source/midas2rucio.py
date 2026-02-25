@@ -9,7 +9,7 @@ import midas.client
 
 import gspread
 
-LOG = "/home/daq/DAQ/online/logs/rucio_upload.log"
+LOG = "/home/cold/daq/online/logs/rucio_upload.log"
 
 
 def log(msg: str, dmp_on_file: bool = False) -> None:

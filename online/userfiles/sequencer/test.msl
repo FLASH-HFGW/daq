@@ -1,0 +1,3 @@
+ODBGET "/Equipment/Netbox/Statistics/Events sent", ev0
+MSG $ev0
+

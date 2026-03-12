@@ -1,0 +1,22 @@
+COMMENT 5 runs of 500 events each (delta method)
+
+# Set the auto-stop limit (this part you already know works)
+PARAM nruns, "Number of runs", 3
+PARAM nev,   "Events per run", 500
+RUNDESCRIPTION "test sequenza 10 run 500 ev"
+
+ODBSET "/Equipment/Netbox/Common/Event limit", $nev
+
+LOOP i, $nruns
+  ODBSET "/Custom/Rucio run status", 0
+
+  TRANSITION start
+  WAIT ODBvalue, "/Runinfo/State", ==, 1
+
+  # small settle time for hardware/FE cleanup
+  # WAIT seconds, 1
+  WAIT ODBvalue, "/Custom/Rucio run status", ==, 1
+  
+ENDLOOP
+
+MSG "All runs completed"

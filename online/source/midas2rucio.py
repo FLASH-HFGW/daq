@@ -108,12 +108,23 @@ def main() -> int:
         return 1
 
     try:
+#        result = subprocess.run(
+#            ["gzip", full_path],
+#            check=True,
+#            capture_output=True,
+#            text=True
+#        )
+
+        threads = 4
+
         result = subprocess.run(
-            ["gzip", full_path],
-            check=True,
-            capture_output=True,
-            text=True
+             ["pigz", "-6", "-p", str(threads), full_path],
+             check=True,
+             capture_output=True,
+             text=True
         )
+
+
         log("Compressione riuscita!")
     except subprocess.CalledProcessError as e:
         log("❌ Errore durante la compressione!")
@@ -144,7 +155,7 @@ def main() -> int:
             "/home/.rucio.cfg:/home/.rucio.cfg",
             "-v",
             f"{full_path}:/app/{name}",
-            "gmazzitelli/rucio-uploader:v0.2",
+            "gmazzitelli/rucio-uploader:v0.3",
             "--file",
             f"/app/{name}",
             "--bucket",
@@ -174,6 +185,24 @@ def main() -> int:
 
         rucio_status = result.returncode
         record['rucio_status']=rucio_status
+        
+        out = result.stdout
+        err = result.stderr
+
+        now = datetime.now().isoformat(timespec="seconds")
+        note = f"[{now}] reupload exit_code={rucio_status}"
+
+        if err:
+            err_lines = err.strip().splitlines()
+            err_last = err_lines[-1] if err_lines else err.strip()
+            note += f" stderr_last='{err_last[:200]}'"
+
+        if out:
+            out_lines = out.strip().splitlines()
+            out_last = out_lines[-1] if out_lines else out.strip()
+            note += f" stdout_last='{out_last[:200]}'"
+
+        record['rucio_messages']=note
     
         # Messaggio MIDAS: upload finito
         try:

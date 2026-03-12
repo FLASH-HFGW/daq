@@ -100,7 +100,7 @@ def rucio_upload_gz(full_path_gz: str) -> Tuple[int, str, str]:
         "docker", "run", "--rm",
         "-v", "/home/.rucio.cfg:/home/.rucio.cfg",
         "-v", f"{full_path_gz}:/app/{name}",
-        "gmazzitelli/rucio-uploader:v0.2",
+        "gmazzitelli/rucio-uploader:v0.3",
         "--file", f"/app/{name}",
         "--bucket", "cygno-data",
         "--did_name", f"FLASH/QUAX/TEST/{name}",

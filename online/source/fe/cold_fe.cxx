@@ -155,7 +155,7 @@ uint64      qwToTransfer =0;
 /* Size of mirror buffer on the PC*/
 int64       llBufferSize =	GIGA_B(1);
 /* Size of chunck of data after which the card signals the data is available*/
-int32       lNotifySize =	MEGA_B(10);
+int32       lNotifySize =	MEGA_B(16);
 int64       llLen = 0;
 /* Sampling rate of card*/
 int64       llSamplerate =  MEGA(5);
@@ -398,18 +398,7 @@ INT read_event(char *pevent, INT off)
   spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_LEN,  &llAvailUser);
   spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_POS,  &llPCPos);
 
-  // patch restart run
-  if (llAvailUser <= 0) 
-  {
-    return 0; // niente dati pronti: non copiare e soprattutto non ACKare
-  }
-  // end patch
-
   llLen = lNotifySize;
-
-  // patch restart run
-  if (llLen > llAvailUser) llLen = llAvailUser;
-  // end patch
 
   // we take care not to go across the end of the buffer, handling the wrap-around
   if ((llPCPos + llLen) >= llBufferSize) llLen = llBufferSize - llPCPos;
@@ -457,6 +446,8 @@ INT StopAcq()
   {
     spcm_dwGetErrorInfo_i32 (hCardDigi, NULL, NULL, szErrorTextBuffer);
     printf ("%s\n", szErrorTextBuffer);
+    spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_LEN,  &llAvailUser);
+    spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)llAvailUser);
     vFreeMemPageAligned (pDigiMem, (uint64) llBufferSize);
     spcm_vClose (hCardDigi);
     return FE_ERR_HW;

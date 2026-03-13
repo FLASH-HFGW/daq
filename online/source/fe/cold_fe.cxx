@@ -154,16 +154,17 @@ drv_handle  hCardDigi;
 int32       g_CardType, g_SerialNumber, g_FncType;
 char        szErrorTextBuffer[ERRORTEXTLEN];
 uint32      dwError;
-int64       g_AvailUser, g_PCPos;	//data
+/* Bytes available by the PC after interrupt has fired and bit position in memory buffer of the beginning of unanalysed data*/
+int64       g_AvailUser, g_PCPos;
 /* Size of mirror buffer on the PC*/
-int64       g_BufferSize_GB =	GIGA_B(1);
+int64       g_BufferSize_GB =	GIGA_B(1);    //default but will be changed in ODB
 /* Size of chunck of data after which the card signals the data is available*/
-int32       g_Notify_size_MB =	MEGA_B(16);
+int32       g_Notify_size_MB =	MEGA_B(16);   //Fixed here!
 int64       g_Len = 0;
 /* Sampling rate of card*/
-int64       g_Sampling_rate_MS =  MEGA(5);
+int64       g_Sampling_rate_MS =  MEGA(5);    //default but will be changed in ODB
 
-int64 Transfered=0;
+int32 g_transfered=0;
 extern INT run_state;
 int g_size = 0;
 
@@ -182,11 +183,11 @@ INT frontend_init()
                    "VISA_Connection_string = STRING : [64] TCPIP::192.168.3.109::inst0::INSTR\n"
                    "Channels_enabled = INT : 255\n" 
                    "Channel_range_mV = INT[8]\n"
-                   "Ghost = INT : 0\n"                      //For unknown reasons the one after the vector is ignore.. boh
+                   "\n"
                    "Pretrigger_channels = INT : 32\n"
                    "Timeout_ms = INT : 3000\n"
                    "Buffer_size_GB = INT64 : 1\n"
-                   "Notify_size_MB = INT : 16\n"
+                   //"Notify_size_MB = INT : 16\n"
                    "Sampling_rate_MS = INT64 : 5\n"
                    );
   int setup_Channel_range_mV[8]={5000,5000,5000,5000,5000,5000,5000,5000};
@@ -200,11 +201,7 @@ INT frontend_init()
   db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/VISA_Connection_string",VISA_Connection_string,&g_size,TID_STRING,FALSE);
   if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
   hCardDigi = spcm_hOpen (VISA_Connection_string);
-  if (!hCardDigi)
-  {
-      printf ("no card found...\n");
-      return FE_ERR_HW;
-  }
+  if (!hCardDigi)  {cm_msg(MERROR,"Hardware","Error as no card was found..");     return FE_ERR_HW;}
 
   // read card type name
   char acCardType[20] = {};
@@ -215,7 +212,7 @@ INT frontend_init()
   spcm_dwGetParam_i32 (hCardDigi, SPC_PCISERIALNO,    &g_SerialNumber);
   spcm_dwGetParam_i32 (hCardDigi, SPC_FNCTYPE,        &g_FncType);
 
-  printf ("Found: %s sn %05d\n", acCardType, g_SerialNumber);  //Add msg instead of printf
+  cm_msg(MINFO,"Hardware","Found: %s sn %05d\n", acCardType, g_SerialNumber);
 
   return SUCCESS;
 }
@@ -267,10 +264,10 @@ INT begin_of_run(INT run_number, char *error)
   if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
   g_BufferSize_GB= GIGA_B(g_BufferSize_GB);
 
-  g_size = sizeof(g_Notify_size_MB);
+  /*g_size = sizeof(g_Notify_size_MB);
   db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Notify_size_MB",&g_Notify_size_MB,&g_size,TID_INT,FALSE);
   if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
-  g_Notify_size_MB= MEGA_B(g_Notify_size_MB);
+  g_Notify_size_MB= MEGA_B(g_Notify_size_MB);*/
 
   g_size = sizeof(g_Sampling_rate_MS);
   db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Sampling_rate_MS",&g_Sampling_rate_MS,&g_size,TID_INT64,FALSE);
@@ -308,13 +305,14 @@ INT begin_of_run(INT run_number, char *error)
   pDigiMem = (int16*) pvAllocMemPageAligned ((uint64) g_BufferSize_GB);
   if (!pDigiMem)
   {
-    printf ("memory allocation failed\n");
+    cm_msg(MERROR,"Hardware","Error as memory allocation failed..");
     spcm_vClose (hCardDigi);
     return FE_ERR_HW;
   }
 
   spcm_dwDefTransfer_i64 (hCardDigi, SPCM_BUF_DATA, SPCM_DIR_CARDTOPC, g_Notify_size_MB, pDigiMem, 0, g_BufferSize_GB);
 
+  g_transfered=0;
   // start everything
 
 	INT ret = StartAcq();
@@ -414,8 +412,9 @@ INT read_event(char *pevent, INT off)
   // we take care not to go across the end of the buffer, handling the wrap-around
   if ((g_PCPos + g_Len) >= g_BufferSize_GB) g_Len = g_BufferSize_GB - g_PCPos;
 
-  Transfered+=g_Notify_size_MB/1024/1024;
-  db_set_value(hDB,0,"Equipment/NetBox/Variables/g_PCPos",&Transfered, sizeof(Transfered),1,TID_INT64);
+  g_transfered+=g_Notify_size_MB/1024/1024;
+  if(g_transfered%4096==0) cm_msg(MINFO,"Data","Data collected: %d MB",g_transfered);
+  
   memcpy(pdata16,((char*)pDigiMem)+g_PCPos,g_Len);
   // buffer is free for DMA transfer again
   spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)g_Len);
@@ -436,7 +435,8 @@ INT StartAcq()
   if (dwError != ERR_OK)
   {
     spcm_dwGetErrorInfo_i32 (hCardDigi, NULL, NULL, szErrorTextBuffer);
-    printf ("%s\n", szErrorTextBuffer);
+    //printf ("%s\n", szErrorTextBuffer);
+    cm_msg(MERROR,"Hardware","Error: %s",szErrorTextBuffer);
     vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);
     spcm_vClose (hCardDigi);
     return FE_ERR_HW;
@@ -450,7 +450,8 @@ INT StopAcq()
   if (dwError != ERR_OK)
   {
     spcm_dwGetErrorInfo_i32 (hCardDigi, NULL, NULL, szErrorTextBuffer);
-    printf ("%s\n", szErrorTextBuffer);
+    //printf ("%s\n", szErrorTextBuffer);
+    cm_msg(MERROR,"Hardware","Error: %s",szErrorTextBuffer);
     spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_LEN,  &g_AvailUser);
     spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)g_AvailUser);
     vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);

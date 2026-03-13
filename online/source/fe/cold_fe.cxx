@@ -43,7 +43,7 @@ using namespace std;
 
 /* make frontend functions callable from the C framework */
 
-/*-- Globals -------------------------------------------------------*/
+/*-- MIDAS Globals -------------------------------------------------------*/
 
 /* The frontend name (client name) as seen by other MIDAS clients   */
 char *frontend_name = (char*)"cold_daq";
@@ -63,8 +63,16 @@ INT max_event_size = 50000000; //1000000000;
 INT max_event_size_frag = 40 * 1024 * 1024;
 
 /* buffer size to hold events */
-INT event_buffer_size = 100 * 1024 * 1024; //2000000000
+INT event_buffer_size = 100 * 1024 * 1024; //2000000000 
 
+/* flag to create configuration ODB values. Use True to overwrite, otherwise the records are created only if not existing */
+BOOL equipment_common_overwrite = FALSE; 
+
+/* Handle for database. Use static so it is valid only in this file. No conflict with midas native handle*/
+static HNDLE hDB;
+
+/*Error variable*/
+INT db_ret= DB_SUCCESS;
 
 /*-- Function declarations -----------------------------------------*/
 
@@ -88,7 +96,6 @@ INT StopAcq();
 
 
 /*-- Equipment list ------------------------------------------------*/
-BOOL equipment_common_overwrite = TRUE;
 
 EQUIPMENT equipment[] = {
 
@@ -144,30 +151,22 @@ EQUIPMENT equipment[] = {
 int16* pDigiMem = NULL;
 
 drv_handle  hCardDigi;
-int32       lCardType, lSerialNumber, lFncType;
+int32       g_CardType, g_SerialNumber, g_FncType;
 char        szErrorTextBuffer[ERRORTEXTLEN];
 uint32      dwError;
-int32       lStatus;
-int32       lTrigCount = 0;
-int64       llAvailUser, llPCPos;	//data
-uint64      qwTotalMem = 0;
-uint64      qwToTransfer =0;
+int64       g_AvailUser, g_PCPos;	//data
 /* Size of mirror buffer on the PC*/
-int64       llBufferSize =	GIGA_B(1);
+int64       g_BufferSize_GB =	GIGA_B(1);
 /* Size of chunck of data after which the card signals the data is available*/
-int32       lNotifySize =	MEGA_B(16);
-int64       llLen = 0;
+int32       g_Notify_size_MB =	MEGA_B(16);
+int64       g_Len = 0;
 /* Sampling rate of card*/
-int64       llSamplerate =  MEGA(5);
+int64       g_Sampling_rate_MS =  MEGA(5);
 
-//TO BE REMOVED int contaround=0;
-//TO BE REMOVED int contapoll=0;
-//TO BE REMOVED ofstream scrivo("Debug.log",ios_base::trunc);
-int64 Transfered=0;//TO BE REMOVED 
+int64 Transfered=0;
 extern INT run_state;
+int g_size = 0;
 
-//FILE* hFile = NULL;
-HNDLE hDBc;
 
 /*-- Frontend Init -------------------------------------------------*/
 
@@ -175,27 +174,48 @@ INT frontend_init()
 {
 
   /*Attach to ODB */
+
+  cm_get_experiment_database(&hDB, NULL);
+
+  // Sets all the settings variables to default and create keys in the ODB only if not existing (if equipment_common_overwrite is false)
+  db_create_record(hDB, 0, "Equipment/Netbox/Settings",
+                   "VISA_Connection_string = STRING : [64] TCPIP::192.168.3.109::inst0::INSTR\n"
+                   "Channels_enabled = INT : 255\n" 
+                   "Channel_range_mV = INT[8]\n"
+                   "Ghost = INT : 0\n"                      //For unknown reasons the one after the vector is ignore.. boh
+                   "Pretrigger_channels = INT : 32\n"
+                   "Timeout_ms = INT : 3000\n"
+                   "Buffer_size_GB = INT64 : 1\n"
+                   "Notify_size_MB = INT : 16\n"
+                   "Sampling_rate_MS = INT64 : 5\n"
+                   );
+  int setup_Channel_range_mV[8]={5000,5000,5000,5000,5000,5000,5000,5000};
+  db_set_value(hDB,0,"Equipment/NetBox/Settings/Channel_range_mV",setup_Channel_range_mV, sizeof(setup_Channel_range_mV),8,TID_INT);
   
-  cm_get_experiment_database(&hDBc, NULL);
+
   /* put any hardware initialization here */
 
-  hCardDigi = spcm_hOpen ("TCPIP::192.168.3.109::inst0::INSTR");
-    if (!hCardDigi)
-    {
-        printf ("no card found...\n");
-        return FE_ERR_HW;
-    }
+  char VISA_Connection_string[64];
+  g_size = sizeof(VISA_Connection_string);
+  db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/VISA_Connection_string",VISA_Connection_string,&g_size,TID_STRING,FALSE);
+  if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+  hCardDigi = spcm_hOpen (VISA_Connection_string);
+  if (!hCardDigi)
+  {
+      printf ("no card found...\n");
+      return FE_ERR_HW;
+  }
 
   // read card type name
   char acCardType[20] = {};
   spcm_dwGetParam_ptr (hCardDigi, SPC_PCITYP, acCardType, sizeof (acCardType));
 
   // read type, function and sn and check for A/D card
-  spcm_dwGetParam_i32 (hCardDigi, SPC_PCITYP,         &lCardType);
-  spcm_dwGetParam_i32 (hCardDigi, SPC_PCISERIALNO,    &lSerialNumber);
-  spcm_dwGetParam_i32 (hCardDigi, SPC_FNCTYPE,        &lFncType);
+  spcm_dwGetParam_i32 (hCardDigi, SPC_PCITYP,         &g_CardType);
+  spcm_dwGetParam_i32 (hCardDigi, SPC_PCISERIALNO,    &g_SerialNumber);
+  spcm_dwGetParam_i32 (hCardDigi, SPC_FNCTYPE,        &g_FncType);
 
-  printf ("Found: %s sn %05d\n", acCardType, lSerialNumber);
+  printf ("Found: %s sn %05d\n", acCardType, g_SerialNumber);  //Add msg instead of printf
 
   return SUCCESS;
 }
@@ -214,7 +234,7 @@ INT frontend_exit()
 INT begin_of_run(INT run_number, char *error)
 {
 
-  if(DEBUG) 
+  if(DEBUG)
   {
 	  ofstream myfile;
 	  myfile.open("debug.txt");
@@ -222,23 +242,54 @@ INT begin_of_run(INT run_number, char *error)
 	  myfile.close();
   }
 
-  //printf("Setting file up\n");
-  //TO BE REMOVED //hFile = fopen ("fileDati.txt", "w");
-  /* put here clear scalers etc. */
+  int Channels_enabled;
+  g_size = sizeof(Channels_enabled);
+  db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Channels_enabled",&Channels_enabled,&g_size,TID_INT,FALSE);
+  if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+
+  int Channel_range_mV[8];
+  g_size = sizeof(Channel_range_mV);
+  db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Channel_range_mV",Channel_range_mV,&g_size,TID_INT,FALSE);
+  if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+
+  int Pretrigger_channels;
+  g_size = sizeof(Pretrigger_channels);
+  db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Pretrigger_channels",&Pretrigger_channels,&g_size,TID_INT,FALSE);
+  if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+
+  int Timeout_ms;
+  g_size = sizeof(Timeout_ms);
+  db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Timeout_ms",&Timeout_ms,&g_size,TID_INT,FALSE);
+  if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+
+  g_size = sizeof(g_BufferSize_GB);
+  db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Buffer_Size_GB",&g_BufferSize_GB,&g_size,TID_INT64,FALSE);
+  if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+  g_BufferSize_GB= GIGA_B(g_BufferSize_GB);
+
+  g_size = sizeof(g_Notify_size_MB);
+  db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Notify_size_MB",&g_Notify_size_MB,&g_size,TID_INT,FALSE);
+  if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+  g_Notify_size_MB= MEGA_B(g_Notify_size_MB);
+
+  g_size = sizeof(g_Sampling_rate_MS);
+  db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Sampling_rate_MS",&g_Sampling_rate_MS,&g_size,TID_INT64,FALSE);
+  if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+  g_Sampling_rate_MS= MEGA(g_Sampling_rate_MS);
 
   // do a simple standard setup
-  spcm_dwSetParam_i32 (hCardDigi, SPC_CHENABLE,       255);              // channels enabled. 255=all channels
-  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP0,           5000);                  // max voltage amplitude
-  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP1,           5000);                  // max voltage amplitude
-  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP2,           5000);                  // max voltage amplitude
-  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP3,           5000);                  // max voltage amplitude
-  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP4,           5000);                  // max voltage amplitude
-  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP5,           5000);                  // max voltage amplitude
-  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP6,           5000);                  // max voltage amplitude
-  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP7,           5000);
-  spcm_dwSetParam_i32 (hCardDigi, SPC_PRETRIGGER,     32);                  	// pretrigger data at start of FIFO mode
+  spcm_dwSetParam_i32 (hCardDigi, SPC_CHENABLE,       Channels_enabled);              // channels enabled. 255=all channels
+  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP0,           Channel_range_mV[0]);                  // max voltage amplitude
+  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP1,           Channel_range_mV[1]);                  // max voltage amplitude
+  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP2,           Channel_range_mV[2]);                  // max voltage amplitude
+  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP3,           Channel_range_mV[3]);                  // max voltage amplitude
+  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP4,           Channel_range_mV[4]);                  // max voltage amplitude
+  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP5,           Channel_range_mV[5]);                  // max voltage amplitude
+  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP6,           Channel_range_mV[6]);                  // max voltage amplitude
+  spcm_dwSetParam_i32 (hCardDigi, SPC_AMP7,           Channel_range_mV[7]);
+  spcm_dwSetParam_i32 (hCardDigi, SPC_PRETRIGGER,     Pretrigger_channels);                  	// pretrigger data at start of FIFO mode
   spcm_dwSetParam_i32 (hCardDigi, SPC_CARDMODE,       SPC_REC_FIFO_SINGLE);   // single FIFO mode
-  spcm_dwSetParam_i32 (hCardDigi, SPC_TIMEOUT,        3000);                  // timeout 5 s
+  spcm_dwSetParam_i32 (hCardDigi, SPC_TIMEOUT,        Timeout_ms);                  // timeout in ms
   spcm_dwSetParam_i32 (hCardDigi, SPC_TRIG_ORMASK,     SPC_TMASK_EXT0);
   spcm_dwSetParam_i32 (hCardDigi, SPC_TRIG_EXT0_MODE,  SPC_TM_POS);            // trigger on positive edge
   spcm_dwSetParam_i32 (hCardDigi, SPC_TRIG_EXT0_LEVEL0,400);                  // trigger level in mV
@@ -249,12 +300,12 @@ INT begin_of_run(INT run_number, char *error)
   spcm_dwSetParam_i32 (hCardDigi, SPC_CLOCK_THRESHOLD, 1);                     // clock threshold, in mV*/
 
 
-  spcm_dwSetParam_i64 (hCardDigi, SPC_SAMPLERATE, llSamplerate);
+  spcm_dwSetParam_i64 (hCardDigi, SPC_SAMPLERATE, g_Sampling_rate_MS);
 
 
   spcm_dwSetParam_i32 (hCardDigi, SPC_M2CMD, M2CMD_CARD_WRITESETUP);
 
-  pDigiMem = (int16*) pvAllocMemPageAligned ((uint64) llBufferSize);
+  pDigiMem = (int16*) pvAllocMemPageAligned ((uint64) g_BufferSize_GB);
   if (!pDigiMem)
   {
     printf ("memory allocation failed\n");
@@ -262,12 +313,12 @@ INT begin_of_run(INT run_number, char *error)
     return FE_ERR_HW;
   }
 
-  spcm_dwDefTransfer_i64 (hCardDigi, SPCM_BUF_DATA, SPCM_DIR_CARDTOPC, lNotifySize, pDigiMem, 0, llBufferSize);
-  
+  spcm_dwDefTransfer_i64 (hCardDigi, SPCM_BUF_DATA, SPCM_DIR_CARDTOPC, g_Notify_size_MB, pDigiMem, 0, g_BufferSize_GB);
+
   // start everything
 
 	INT ret = StartAcq();
-  
+
   return ret;
 }
 
@@ -276,8 +327,6 @@ INT begin_of_run(INT run_number, char *error)
 INT end_of_run(INT run_number, char *error)
 {
  return StopAcq();
- //TO BE REMOVED scrivo.close();
- //fclose(hFile);
 }
 
 /*-- Pause Run -----------------------------------------------------*/
@@ -322,27 +371,6 @@ INT poll_event(INT source, INT count, BOOL test)
   while(count--)
   {
     return TRUE;
-    /*
-    //TO BE REMOVED 
-    dwError = spcm_dwGetParam_i32 (hCardDigi, SPC_M2STATUS, &lStatus);
-    if (dwError != ERR_OK)
-    {
-      spcm_dwGetErrorInfo_i32 (hCardDigi, NULL, NULL, szErrorTextBuffer);
-      printf ("%s\n", szErrorTextBuffer);
-      scrivo<<szErrorTextBuffer;
-      vFreeMemPageAligned (pDigiMem, (uint64) llBufferSize);
-      spcm_vClose (hCardDigi);
-      return FE_ERR_HW;
-    }
-    if(contapoll%1000==0) scrivo<<"pollando\npollando  "<<contapoll<<"   "<< std::hex << lStatus<<endl;
-    contapoll++;
-
-    if((lStatus >> 8 & 0x1))
-    {
-      scrivo<<"pollato\npollato    "<< lStatus<<endl;
-                      return TRUE;
-    //TO BE REMOVED 
-    }*/
   }
 
   return FALSE;
@@ -370,24 +398,7 @@ INT interrupt_configure(INT cmd, INT source, POINTER_T adr)
 
 INT read_event(char *pevent, INT off)
 {
-
-  //while(run_state == STATE_RUNNING)
-  //{
-    dwError = spcm_dwSetParam_i32 (hCardDigi, SPC_M2CMD, M2CMD_DATA_WAITDMA);
-    /*if(dwError == ERR_TIMEOUT) {cout<<"Timeout\n"; continue;}
-    if (dwError != ERR_OK)
-      {
-        spcm_dwGetErrorInfo_i32 (hCardDigi, NULL, NULL, szErrorTextBuffer);
-        printf("Why here????\n");
-        printf ("%s\n", szErrorTextBuffer);
-        //TO BE REMOVED scrivo<<szErrorTextBuffer;
-        //vFreeMemPageAligned (pDigiMem, (uint64) llBufferSize);
-        //spcm_vClose (hCardDigi);
-        return FE_ERR_HW;
-      }*/
-    //  break;
-  //}
-  //if(run_state != STATE_RUNNING) return 0;
+  dwError = spcm_dwSetParam_i32 (hCardDigi, SPC_M2CMD, M2CMD_DATA_WAITDMA);
 
   /* init bank structure */
   bk_init32(pevent);
@@ -395,28 +406,22 @@ INT read_event(char *pevent, INT off)
   WORD* pdata16 = NULL;
   bk_create(pevent, "SPEC", TID_WORD, (void**)&pdata16);
 
-  spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_LEN,  &llAvailUser);
-  spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_POS,  &llPCPos);
+  spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_LEN,  &g_AvailUser);
+  spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_POS,  &g_PCPos);
 
-  llLen = lNotifySize;
+  g_Len = g_Notify_size_MB;
 
   // we take care not to go across the end of the buffer, handling the wrap-around
-  if ((llPCPos + llLen) >= llBufferSize) llLen = llBufferSize - llPCPos;
-  //TO BE REMOVED scrivo<<"la\nla\nla\nla\n";
-  
-  Transfered+=lNotifySize/1024/1024;
-  db_set_value(hDBc,0,"Equipment/NetBox/Variables/llPCPos",&Transfered, sizeof(Transfered),1,TID_INT64);
-  //TO BE REMOVED scrivo<<"le\nle\nle\nle\n";
-  //fwrite( ((char*)pDigiMem)+llPCPos, llLen, 1, hFile);
-  memcpy(pdata16,((char*)pDigiMem)+llPCPos,llLen);
-  //TO BE REMOVED scrivo<<"li\nli\nli\nli\n";
-  // buffer is free for DMA transfer again
-  spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)llLen);
+  if ((g_PCPos + g_Len) >= g_BufferSize_GB) g_Len = g_BufferSize_GB - g_PCPos;
 
-  bk_close(pevent,(char*)pdata16+llLen);
-  //TO BE REMOVED scrivo<<"lo\nlo\nlo\nlo "<<contaround<<endl;
-  //TO BE REMOVED contaround++;
-  //TO BE REMOVED scrivo.flush();
+  Transfered+=g_Notify_size_MB/1024/1024;
+  db_set_value(hDB,0,"Equipment/NetBox/Variables/g_PCPos",&Transfered, sizeof(Transfered),1,TID_INT64);
+  memcpy(pdata16,((char*)pDigiMem)+g_PCPos,g_Len);
+  // buffer is free for DMA transfer again
+  spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)g_Len);
+
+  bk_close(pevent,(char*)pdata16+g_Len);
+
   //////MAYBE : Here checks if the header structure of the bank is as the initialisation done few lines above
   if (bk_size(pevent)==defaultEvSize ) { return 0; }
   return bk_size(pevent);
@@ -432,7 +437,7 @@ INT StartAcq()
   {
     spcm_dwGetErrorInfo_i32 (hCardDigi, NULL, NULL, szErrorTextBuffer);
     printf ("%s\n", szErrorTextBuffer);
-    vFreeMemPageAligned (pDigiMem, (uint64) llBufferSize);
+    vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);
     spcm_vClose (hCardDigi);
     return FE_ERR_HW;
   }
@@ -446,9 +451,9 @@ INT StopAcq()
   {
     spcm_dwGetErrorInfo_i32 (hCardDigi, NULL, NULL, szErrorTextBuffer);
     printf ("%s\n", szErrorTextBuffer);
-    spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_LEN,  &llAvailUser);
-    spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)llAvailUser);
-    vFreeMemPageAligned (pDigiMem, (uint64) llBufferSize);
+    spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_LEN,  &g_AvailUser);
+    spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)g_AvailUser);
+    vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);
     spcm_vClose (hCardDigi);
     return FE_ERR_HW;
   }

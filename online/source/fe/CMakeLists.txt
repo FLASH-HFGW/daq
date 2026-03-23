@@ -28,7 +28,8 @@ endif()
 message(STATUS "${PROJECT_NAME}: MIDASSYS: ${MIDASSYS}")
 
 #Add driver lib to path for compilation
-link_directories("/home/cold/daq/online/driver/Spectrum_NetBox/")
+#link_directories("/home/cold/daq/online/driver/Spectrum_NetBox/")
+link_directories("/home/cold/daq/online/lib/")
 
 add_executable(cold_fe cold_fe.cxx)
 target_include_directories(cold_fe PUBLIC "/home/cold/daq/online/driver/Spectrum_NetBox/")

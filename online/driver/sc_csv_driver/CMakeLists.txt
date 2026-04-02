@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 project(spcm_ostools_linux)
 
 add_compile_options(-Wall -O3)
+set(CMAKE_CXX_STANDARD 17)
 
 #Find MIDAS
 if(NOT TARGET midas::midas)
@@ -16,6 +17,6 @@ target_include_directories(csvdev PUBLIC
                           "/home/cold/daq/online/driver/sc_csv_driver/"
                           )
                                                     
-target_link_libraries(csvdev z midas::mfed midas::drivers)
+target_link_libraries(csvdev z midas::mfed midas::drivers stdc++fs)
 
 install(TARGETS csvdev LIBRARY DESTINATION .)

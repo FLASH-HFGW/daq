@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 project(sc_fe)
 
 add_compile_options(-Wall -O3)
+set(CMAKE_CXX_STANDARD 17)
 
 if(NOT TARGET midas::midas)
     find_package(Midas REQUIRED PATHS $ENV{MIDASSYS})

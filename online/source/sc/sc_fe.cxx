@@ -16,6 +16,7 @@
 #include "history.h"
 //#include "class/hv.h"
 #include "class/multi.h"
+//#include "device/nulldev.h"
 #include "csvdev.h"
 #include "bus/null.h"
 
@@ -46,10 +47,10 @@ EQUIPMENT equipment[] = {
      "MIDAS",                   /* format */
      TRUE,                      /* enabled */
      RO_ALWAYS,        /* read when running and on transitions */
-     1000,                     /* produce event every x msec */
+     10000,                     /* produce event every x msec */
      0,                         /* stop run after this event limit */
      0,                         /* number of sub events */
-     1,                         /* log history every second */
+     10,                         /* log history every second */
      "", "", ""} ,
     cd_multi_read,              /* readout routine */
     cd_multi,                   /* class driver main routine */

@@ -1,9 +1,10 @@
 /********************************************************************\
 
-  Name:         nulldev.c
-  Created by:   Stefan Ritt
+  Name:         csvdev.c
+  Created by:   Giorgio Dho and Giovanni Mazzitelli
+                01/03/2026
 
-  Contents:     NULL Device Driver. This file can be used as a 
+  Contents:     CSV Device Driver. This file can be used as a 
                 template to write a read device driver
 
   $Id$
@@ -15,7 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
-#include <string>
+#include <string.h>
 #include <math.h>
 #include <sstream>
 #include <filesystem>
@@ -53,6 +54,7 @@ Extension = STRING : [16] .txt\n\
 typedef struct {
    CSVDEV_SETTINGS csvdev_settings;
    float *array;
+   float last_row[64];
    INT num_channels;
     INT(*bd) (INT cmd, ...);    /* bus driver entry function .... we exploit the null.h.. basically we do not use it*/
    void *bd_info;               /* private info of bus driver */
@@ -63,8 +65,10 @@ typedef struct {
 
 typedef INT(func_t) (INT cmd, ...);
 
+//Path to csv config
+static std::string PATH_TO_CONFIG = "/home/cold/daq/online/driver/sc_csv_driver/config_csv.conf";
 /*Static global array to store the last line of csv file which will be read*/
-static float last_row[64];
+//static float last_row[64];
 /*Static global handle for the database odb*/
 static HNDLE hDB;
 
@@ -99,21 +103,25 @@ std::vector<std::string> get_N_row_as_list(const std::string& file_path, int N)
 
    if(N==-1)
    {
-      file.seekg(-300, file.end);     //goes immediately to 300 characters prior to the end of file
+      std::getline(file, line);
+      int linelength = line.length();
+      file.seekg(-(linelength+linelength/2), file.end);     //goes immediately to 300 characters prior to the end of file
       while (std::getline(file, line))
       {
          if(!line.empty())    lastline = line;  
       }
+      file.close();
       return split(lastline, '\t');
    }
 
    int current_row = 0;
    while (std::getline(file, line))
    {
-      if (current_row == N)   return split(line, '\t');
+      if (current_row == N)   {file.close(); return split(line, '\t');}
       ++current_row;
    }
    cm_msg(MERROR,"Device","Index while reading csv file went out of range..");
+   file.close();
    return {""};
 }
 
@@ -152,7 +160,6 @@ std::string get_most_recent_file(const char* directory, const char* prefix, cons
    return most_recent_path.string();
 
 }
-
 /*End custom functions*/
 
 /* the init function creates a ODB record which contains the
@@ -160,7 +167,7 @@ std::string get_most_recent_file(const char* directory, const char* prefix, cons
 INT csv_init(HNDLE hkey, CSVDEV_INFO **pinfo, INT channels, func_t *bd)
 {
    int status, size;
-   HNDLE hkeydd;
+   HNDLE hkeydd, hfield;
    CSVDEV_INFO *info;
 
    /* allocate info structure */
@@ -168,30 +175,87 @@ INT csv_init(HNDLE hkey, CSVDEV_INFO **pinfo, INT channels, func_t *bd)
    *pinfo = info;
 
    cm_get_experiment_database(&hDB, NULL);
+   //Find the name of current equipment
+   std::string equip_name;
+   equip_name = split(db_get_path(hDB,hkey),'/')[2];     //First element is null, second is Equipment, third is this equipment name
 
-   /* create NULLDEV settings record */
-   status = db_create_record(hDB, hkey, "DD", CSVDEV_SETTINGS_STR);
-   if (status != DB_SUCCESS)
+   //Read from config the equivalent of CSVDEVSETTINGS of the specific equipment
+   std::ifstream file(PATH_TO_CONFIG.c_str());
+   if (!file.is_open())
+   {
+      cm_msg(MERROR,"Device","Impossible to open device config file %s..",PATH_TO_CONFIG.c_str());
       return FE_ERR_ODB;
+   }
 
+   std::string line, equiptest;
+   std::string path_conf, base_conf,exten_conf;
+   int linenumber = 0;
+   bool found= false;
+
+   while (std::getline(file, line))
+   {
+      if(linenumber==0 || line.empty())
+      {
+         linenumber++;
+         continue;
+      }
+      equiptest = split(line,' ')[1];
+      if(equiptest.compare(equip_name) == 0)
+      {
+         //Create string record to setup the device drived settings in the odb
+         std::getline(file,line);
+         path_conf = split(line,' ')[1];
+         std::getline(file,line);
+         base_conf = split(line,' ')[1];
+         std::getline(file,line);
+         exten_conf = split(line,' ')[1];
+         found = true;
+         break;
+      }
+      else
+      {
+         for(int k=0;k<3;k++) std::getline(file, line);
+      }
+   }
+   if(!found)
+   {
+      cm_msg(MERROR,"Device","Current equipment %s is not found in device config file %s..",equip_name.c_str(),PATH_TO_CONFIG.c_str());
+      return FE_ERR_ODB;
+   }
+   file.close();
+
+   /* create CSVDEV settings record */
+   status = db_create_record(hDB, hkey, "DD", CSVDEV_SETTINGS_STR);
+   if (status != DB_SUCCESS)      return FE_ERR_ODB;
    db_find_key(hDB, hkey, "DD", &hkeydd);
+
+   //Overwrite CSVSETTINGS
+   db_find_key(hDB, hkeydd, "Path",      &hfield);
+   db_set_data(hDB, hfield, path_conf.c_str(),  256, 1, TID_STRING); 
+   db_find_key(hDB, hkeydd, "Basefile",  &hfield);
+   db_set_data(hDB, hfield, base_conf.c_str(),   64, 1, TID_STRING);
+   db_find_key(hDB, hkeydd, "Extension", &hfield);
+   db_set_data(hDB, hfield, exten_conf.c_str(),    16, 1, TID_STRING);
+   //Write actual config in csvdev_settings
    size = sizeof(info->csvdev_settings);
    db_get_record(hDB, hkeydd, &info->csvdev_settings, &size, 0);
-
-   //test
-   char testo[channels*32];
-   HNDLE hkeynamesinput;
-   db_find_key(hDB, 0, "/Equipment/Environment/Settings/Names Input", &hkeynamesinput);
-   printf("\nvalorekey %d \n",hkeynamesinput);
-   size = sizeof(testo);
-   db_get_record(hDB, hkeynamesinput, &testo, &size, 0);
-
-   for(int i=0;i<96;i++) std::cout<<testo[i]<<std::endl;
 
    /* initialize driver */
    info->num_channels = channels;
    info->array = (float*) calloc(channels, sizeof(float));
    info->hkey = hkey;
+
+   return FE_SUCCESS;
+}
+
+INT csvdev_get_label(CSVDEV_INFO * info, INT channel, char *labelpos)
+{
+   std::string filename;
+   filename = get_most_recent_file(info->csvdev_settings.path,info->csvdev_settings.basefile,info->csvdev_settings.extension);
+   //get first line for header
+   std::vector<std::string> line_pieces;
+   line_pieces = get_N_row_as_list(filename,0);
+   sprintf(labelpos, "%s", line_pieces[channel+1].c_str());
 
    return FE_SUCCESS;
 }
@@ -242,15 +306,16 @@ INT csvdev_get(CSVDEV_INFO * info, INT channel, float *pvalue)
       db_find_key(hDB, info->hkey, "DD", &hkeydd);
       int size = sizeof(info->csvdev_settings);
       db_get_record(hDB, hkeydd, &info->csvdev_settings, &size, 0);
+
       std::string filename;
       filename = get_most_recent_file(info->csvdev_settings.path,info->csvdev_settings.basefile,info->csvdev_settings.extension);
       //get last line
       std::vector<std::string> line_pieces;
       line_pieces = get_N_row_as_list(filename,-1);
-      for(long unsigned int i=0;i<line_pieces.size()-1;i++)  last_row[i] = stof(line_pieces[i+1]);
+      for(long unsigned int i=0;i<line_pieces.size()-1;i++)  info->last_row[i] = stof(line_pieces[i+1]);
    }
    
-   *pvalue = last_row[channel];
+   *pvalue = info->last_row[channel];
 
    return FE_SUCCESS;
 }
@@ -263,6 +328,7 @@ INT csvdev(INT cmd, ...)
    HNDLE hKey;
    INT channel, status;
    float value, *pvalue;
+   char *labelpos;
    CSVDEV_INFO *info;
 
    va_start(argptr, cmd);
@@ -278,6 +344,13 @@ INT csvdev(INT cmd, ...)
       status = csv_init(hKey, pinfo, channel, bd);
       break;
    }
+   case CMD_GET_LABEL:
+      info = va_arg(argptr, CSVDEV_INFO *);
+      channel = va_arg(argptr, INT);
+      labelpos = va_arg(argptr, char *);
+      status = csvdev_get_label(info, channel, labelpos);
+      break;
+
    case CMD_EXIT:
       info = va_arg(argptr, CSVDEV_INFO *);
       status = csvdev_exit(info);

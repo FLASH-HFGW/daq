@@ -34,6 +34,11 @@ DEVICE_DRIVER multi_driver[] = {
    //{"Output", nulldev, 2, null, DF_OUTPUT},
    {""}
 };
+DEVICE_DRIVER multi_driver2[] = {
+   {"Input2", csvdev, 3, null, DF_INPUT},
+   //{"Output", nulldev, 2, null, DF_OUTPUT},
+   {""}
+};
 
 BOOL equipment_common_overwrite = TRUE;
 
@@ -50,11 +55,29 @@ EQUIPMENT equipment[] = {
      10000,                     /* produce event every x msec */
      0,                         /* stop run after this event limit */
      0,                         /* number of sub events */
-     10,                         /* log history every second */
+     1,                         /* log history every second */
      "", "", ""} ,
     cd_multi_read,              /* readout routine */
     cd_multi,                   /* class driver main routine */
     multi_driver,               /* device driver list */
+    NULL,                       /* init string */
+    },
+    {"Environment2",              /* equipment name */
+    {11, 0,                     /* event ID, trigger mask */
+     "SYSTEM",                  /* event buffer */
+     EQ_SLOW,                   /* equipment type */
+     0,                         /* event source */
+     "MIDAS",                   /* format */
+     TRUE,                      /* enabled */
+     RO_ALWAYS,        /* read when running and on transitions */
+     10000,                     /* produce event every x msec */
+     0,                         /* stop run after this event limit */
+     0,                         /* number of sub events */
+     1,                         /* log history every second */
+     "", "", ""} ,
+    cd_multi_read,              /* readout routine */
+    cd_multi,                   /* class driver main routine */
+    multi_driver2,               /* device driver list */
     NULL,                       /* init string */
     },
 

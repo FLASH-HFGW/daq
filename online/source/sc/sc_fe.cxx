@@ -29,13 +29,18 @@ const char *frontend_file_name = __FILE__;
 
 /*-- Equipment list ------------------------------------------------*/
 
-DEVICE_DRIVER multi_driver[] = {
-   {"Input", csvdev, 3, null, DF_INPUT},
+DEVICE_DRIVER multi_driver0[] = {
+   {"Input0", csvdev, 13, null, DF_INPUT},
+   //{"Output", nulldev, 2, null, DF_OUTPUT},
+   {""}
+};
+DEVICE_DRIVER multi_driver1[] = {
+   {"Input1", csvdev, 20, null, DF_INPUT},
    //{"Output", nulldev, 2, null, DF_OUTPUT},
    {""}
 };
 DEVICE_DRIVER multi_driver2[] = {
-   {"Input2", csvdev, 3, null, DF_INPUT},
+   {"Input2", csvdev, 25, null, DF_INPUT},
    //{"Output", nulldev, 2, null, DF_OUTPUT},
    {""}
 };
@@ -44,7 +49,7 @@ BOOL equipment_common_overwrite = TRUE;
 
 EQUIPMENT equipment[] = {
 
-   {"Environment",              /* equipment name */
+   {"Temp_Mercury",              /* equipment name */
     {10, 0,                     /* event ID, trigger mask */
      "SYSTEM",                  /* event buffer */
      EQ_SLOW,                   /* equipment type */
@@ -52,17 +57,17 @@ EQUIPMENT equipment[] = {
      "MIDAS",                   /* format */
      TRUE,                      /* enabled */
      RO_ALWAYS,        /* read when running and on transitions */
-     10000,                     /* produce event every x msec */
+     30000,                     /* produce event every x msec */
      0,                         /* stop run after this event limit */
      0,                         /* number of sub events */
-     1,                         /* log history every second */
+     30,                         /* log history every second */
      "", "", ""} ,
     cd_multi_read,              /* readout routine */
     cd_multi,                   /* class driver main routine */
-    multi_driver,               /* device driver list */
+    multi_driver0,               /* device driver list */
     NULL,                       /* init string */
     },
-    {"Environment2",              /* equipment name */
+    {"Temp_FP",              /* equipment name */
     {11, 0,                     /* event ID, trigger mask */
      "SYSTEM",                  /* event buffer */
      EQ_SLOW,                   /* equipment type */
@@ -70,10 +75,28 @@ EQUIPMENT equipment[] = {
      "MIDAS",                   /* format */
      TRUE,                      /* enabled */
      RO_ALWAYS,        /* read when running and on transitions */
-     10000,                     /* produce event every x msec */
+     30000,                     /* produce event every x msec */
      0,                         /* stop run after this event limit */
      0,                         /* number of sub events */
-     1,                         /* log history every second */
+     30,                         /* log history every second */
+     "", "", ""} ,
+    cd_multi_read,              /* readout routine */
+    cd_multi,                   /* class driver main routine */
+    multi_driver1,               /* device driver list */
+    NULL,                       /* init string */
+    },
+    {"Temp_AVS",              /* equipment name */
+    {12, 0,                     /* event ID, trigger mask */
+     "SYSTEM",                  /* event buffer */
+     EQ_SLOW,                   /* equipment type */
+     0,                         /* event source */
+     "MIDAS",                   /* format */
+     TRUE,                      /* enabled */
+     RO_ALWAYS,        /* read when running and on transitions */
+     30000,                     /* produce event every x msec */
+     0,                         /* stop run after this event limit */
+     0,                         /* number of sub events */
+     30,                         /* log history every second */
      "", "", ""} ,
     cd_multi_read,              /* readout routine */
     cd_multi,                   /* class driver main routine */

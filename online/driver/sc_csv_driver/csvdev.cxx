@@ -37,12 +37,14 @@ typedef struct {
    char path[256];
    char basefile[64];
    char extension[16];
+   char header_line[16];
 } CSVDEV_SETTINGS;
 
 #define CSVDEV_SETTINGS_STR "\
 Path =  STRING : [256] /media/Mercury_dati/\n\
 Basefile = STRING : [64] Mercury_\n\
 Extension = STRING : [16] .txt\n\
+Header_line = STRING : [16] 0\n\
 "
 
 /* following structure contains private variables to the device
@@ -67,12 +69,17 @@ typedef INT(func_t) (INT cmd, ...);
 
 //Path to csv config
 static std::string PATH_TO_CONFIG = "/home/cold/daq/online/driver/sc_csv_driver/config_csv.conf";
-/*Static global array to store the last line of csv file which will be read*/
-//static float last_row[64];
 /*Static global handle for the database odb*/
 static HNDLE hDB;
 
 /*Custom functions*/
+
+//Remove character from string
+void remove_char(std::string& s, char c)
+{
+   s.erase(std::remove(s.begin(), s.end(), c), s.end());
+}
+
 
 // Split string using delimiter
 std::vector<std::string> split(const std::string& line, char delimiter)
@@ -103,21 +110,38 @@ std::vector<std::string> get_N_row_as_list(const std::string& file_path, int N)
 
    if(N==-1)
    {
-      std::getline(file, line);
-      int linelength = line.length();
-      file.seekg(-(linelength+linelength/2), file.end);     //goes immediately to 300 characters prior to the end of file
+      file.seekg(-2, file.end);
+      std::streamoff pos = file.tellg();
+      char ch;
+      while (pos > 0) 
+      {
+        file.seekg(--pos);
+        file.get(ch);
+        if (ch == '\n' || ch == '\r')
+            break;
+      }
+
+      file.seekg(--pos);     //goes immediately to 300 characters prior to the end of file
       while (std::getline(file, line))
       {
          if(!line.empty())    lastline = line;  
       }
       file.close();
+      if(lastline.back() == '\r') lastline.pop_back();
       return split(lastline, '\t');
    }
 
    int current_row = 0;
    while (std::getline(file, line))
    {
-      if (current_row == N)   {file.close(); return split(line, '\t');}
+      if (current_row == N)
+      {
+         file.close();
+         if(line.back() == '\r') line.pop_back();
+         remove_char(line,'[');
+         remove_char(line,']');
+         return split(line, '\t');
+      }
       ++current_row;
    }
    cm_msg(MERROR,"Device","Index while reading csv file went out of range..");
@@ -188,7 +212,7 @@ INT csv_init(HNDLE hkey, CSVDEV_INFO **pinfo, INT channels, func_t *bd)
    }
 
    std::string line, equiptest;
-   std::string path_conf, base_conf,exten_conf;
+   std::string path_conf, base_conf,exten_conf, header_line;
    int linenumber = 0;
    bool found= false;
 
@@ -209,12 +233,14 @@ INT csv_init(HNDLE hkey, CSVDEV_INFO **pinfo, INT channels, func_t *bd)
          base_conf = split(line,' ')[1];
          std::getline(file,line);
          exten_conf = split(line,' ')[1];
+         std::getline(file,line);
+         header_line = split(line,' ')[1];
          found = true;
          break;
       }
       else
       {
-         for(int k=0;k<3;k++) std::getline(file, line);
+         for(int k=0;k<4;k++) std::getline(file, line);
       }
    }
    if(!found)
@@ -236,6 +262,8 @@ INT csv_init(HNDLE hkey, CSVDEV_INFO **pinfo, INT channels, func_t *bd)
    db_set_data(hDB, hfield, base_conf.c_str(),   64, 1, TID_STRING);
    db_find_key(hDB, hkeydd, "Extension", &hfield);
    db_set_data(hDB, hfield, exten_conf.c_str(),    16, 1, TID_STRING);
+   db_find_key(hDB, hkeydd, "Header_line", &hfield);
+   db_set_data(hDB, hfield, header_line.c_str(),    16, 1, TID_STRING);
    //Write actual config in csvdev_settings
    size = sizeof(info->csvdev_settings);
    db_get_record(hDB, hkeydd, &info->csvdev_settings, &size, 0);
@@ -254,7 +282,9 @@ INT csvdev_get_label(CSVDEV_INFO * info, INT channel, char *labelpos)
    filename = get_most_recent_file(info->csvdev_settings.path,info->csvdev_settings.basefile,info->csvdev_settings.extension);
    //get first line for header
    std::vector<std::string> line_pieces;
-   line_pieces = get_N_row_as_list(filename,0);
+   //HNDLE hfield;
+   int header_line=std::stoi(info->csvdev_settings.header_line);
+   line_pieces = get_N_row_as_list(filename,header_line);
    sprintf(labelpos, "%s", line_pieces[channel+1].c_str());
 
    return FE_SUCCESS;
@@ -306,13 +336,18 @@ INT csvdev_get(CSVDEV_INFO * info, INT channel, float *pvalue)
       db_find_key(hDB, info->hkey, "DD", &hkeydd);
       int size = sizeof(info->csvdev_settings);
       db_get_record(hDB, hkeydd, &info->csvdev_settings, &size, 0);
-
       std::string filename;
       filename = get_most_recent_file(info->csvdev_settings.path,info->csvdev_settings.basefile,info->csvdev_settings.extension);
       //get last line
       std::vector<std::string> line_pieces;
       line_pieces = get_N_row_as_list(filename,-1);
-      for(long unsigned int i=0;i<line_pieces.size()-1;i++)  info->last_row[i] = stof(line_pieces[i+1]);
+      std::string equip_name;
+      equip_name = split(db_get_path(hDB,info->hkey),'/')[2];
+      
+      for(long unsigned int i=0;i<line_pieces.size()-1;i++)
+      {
+         info->last_row[i] = stof(line_pieces[i+1]); 
+      }
    }
    
    *pvalue = info->last_row[channel];

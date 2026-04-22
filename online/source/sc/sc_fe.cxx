@@ -57,10 +57,10 @@ EQUIPMENT equipment[] = {
      "MIDAS",                   /* format */
      TRUE,                      /* enabled */
      RO_ALWAYS,        /* read when running and on transitions */
-     30000,                     /* produce event every x msec */
+     200000,                     /* produce event every x msec */
      0,                         /* stop run after this event limit */
      0,                         /* number of sub events */
-     30,                         /* log history every second */
+     200000,                         /* log history every second */
      "", "", ""} ,
     cd_multi_read,              /* readout routine */
     cd_multi,                   /* class driver main routine */
@@ -75,10 +75,10 @@ EQUIPMENT equipment[] = {
      "MIDAS",                   /* format */
      TRUE,                      /* enabled */
      RO_ALWAYS,        /* read when running and on transitions */
-     30000,                     /* produce event every x msec */
+     200000,                     /* produce event every x msec */
      0,                         /* stop run after this event limit */
      0,                         /* number of sub events */
-     30,                         /* log history every second */
+     200000,                         /* log history every second */
      "", "", ""} ,
     cd_multi_read,              /* readout routine */
     cd_multi,                   /* class driver main routine */
@@ -93,10 +93,10 @@ EQUIPMENT equipment[] = {
      "MIDAS",                   /* format */
      TRUE,                      /* enabled */
      RO_ALWAYS,        /* read when running and on transitions */
-     30000,                     /* produce event every x msec */
+     200000,                     /* produce event every x msec */
      0,                         /* stop run after this event limit */
      0,                         /* number of sub events */
-     30,                         /* log history every second */
+     200000,                         /* log history every second */
      "", "", ""} ,
     cd_multi_read,              /* readout routine */
     cd_multi,                   /* class driver main routine */

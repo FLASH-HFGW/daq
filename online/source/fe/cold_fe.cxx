@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <chrono>
+#include <thread>
 
 
 // ----- include standard driver header from library -----
@@ -148,7 +149,7 @@ EQUIPMENT equipment[] = {
 
 /* Global custom variable*/
 /* Global pointer to digitizer memory address */
-int16* pDigiMem = NULL;
+int16* pDigiMem = nullptr;
 
 drv_handle  hCardDigi;
 int32       g_CardType, g_SerialNumber, g_FncType;
@@ -221,6 +222,7 @@ INT frontend_init()
 
 INT frontend_exit()
 {
+  if(pDigiMem != nullptr) vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);
   spcm_vClose (hCardDigi);
   return SUCCESS;
 
@@ -302,6 +304,8 @@ INT begin_of_run(INT run_number, char *error)
 
   spcm_dwSetParam_i32 (hCardDigi, SPC_M2CMD, M2CMD_CARD_WRITESETUP);
 
+  if(pDigiMem != nullptr) vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);
+
   pDigiMem = (int16*) pvAllocMemPageAligned ((uint64) g_BufferSize_GB);
   if (!pDigiMem)
   {
@@ -331,14 +335,16 @@ INT end_of_run(INT run_number, char *error)
 
 INT pause_run(INT run_number, char *error)
 {
-  return StopAcq();
+  cm_msg(MERROR,"Software","Error: Pause run not implemented");
+  return FE_ERR_HW;
 }
 
 /*-- Resume Run ----------------------------------------------------*/
 
 INT resume_run(INT run_number, char *error)
 {
-  return StartAcq();
+  cm_msg(MERROR,"Software","Error: Resume run not implemented");
+  return FE_ERR_HW;
 }
 
 /*-- Frontend Loop -------------------------------------------------*/
@@ -421,6 +427,7 @@ INT read_event(char *pevent, INT off)
 
   bk_close(pevent,(char*)pdata16+g_Len);
 
+
   //////MAYBE : Here checks if the header structure of the bank is as the initialisation done few lines above
   if (bk_size(pevent)==defaultEvSize ) { return 0; }
   return bk_size(pevent);
@@ -436,7 +443,7 @@ INT StartAcq()
   {
     spcm_dwGetErrorInfo_i32 (hCardDigi, NULL, NULL, szErrorTextBuffer);
     //printf ("%s\n", szErrorTextBuffer);
-    cm_msg(MERROR,"Hardware","Error: %s",szErrorTextBuffer);
+    cm_msg(MERROR,"Hardware","Error at StartAcq: %s",szErrorTextBuffer);
     vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);
     spcm_vClose (hCardDigi);
     return FE_ERR_HW;
@@ -447,6 +454,8 @@ INT StartAcq()
 INT StopAcq()
 {
   dwError = spcm_dwSetParam_i32 (hCardDigi, SPC_M2CMD, M2CMD_CARD_STOP | M2CMD_DATA_STOPDMA);
+  
+
   if (dwError != ERR_OK)
   {
     spcm_dwGetErrorInfo_i32 (hCardDigi, NULL, NULL, szErrorTextBuffer);

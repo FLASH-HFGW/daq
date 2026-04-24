@@ -54,18 +54,9 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
         chan1 = self.tti.ch1.channel
         client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "Voltage"), voltage)
         
-        self.releController.write(252)
-        time.sleep(0.005)
-        #print('4 e 5 ON:\n')
-        self.releController.write(228)
-        self.tti.write(f"OP{chan1} 1")
-        time.sleep(0.008)
-        print('Done.\n')
-        self.tti.write(f"OP{chan1} 0")
-        self.releController.write(0xff)
         
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"), 1)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 1)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"), 0)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 0)
         
         # You can set the status of the equipment (appears in the midas status page)
         self.set_status("Relé Initialized")
@@ -88,14 +79,14 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
         
         equip_name = "CryoSwitch"
         cset = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"))
-        cstatus = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"))
+        #cstatus = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"))
         chan1 = self.tti.ch1.channel
         
-        if cset == cstatus:
+        if cset == 0:
             pass
         
         
-        elif cset==1 and cstatus==2:
+        elif cset==1:
             
             self.releController.write(252)
             time.sleep(0.005)
@@ -107,10 +98,11 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
             self.tti.write(f"OP{chan1} 0")
             self.releController.write(0xff)
            
-            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 1) 
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 1)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"), 0) 
             self.client.msg("Switch has been changed to C-1.")
         
-        elif cset==2 and cstatus==1:
+        elif cset==2:
             
             #4,5 ON
             self.releController.write(231)
@@ -121,6 +113,7 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
             self.releController.write(0xff)
             
             self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 2)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"), 0) 
             self.client.msg("Switch has been changed to C-2.")
             
         self.set_status("Running")   

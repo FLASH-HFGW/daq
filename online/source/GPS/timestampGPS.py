@@ -1,3 +1,4 @@
+#! /usr/bin/python
 """
 Example of a basic midas frontend that has one periodic equipment.
 
@@ -37,7 +38,7 @@ class MyPeriodicEquipment(midas.frontend.EquipmentBase):
         default_common.equip_type = midas.EQ_PERIODIC
         default_common.buffer_name = "SYSTEM"
         default_common.trigger_mask = 0
-        default_common.event_id = 8
+        default_common.event_id = 2
         default_common.period_ms = 950
         default_common.read_when = midas.RO_ALWAYS
         default_common.log_history = 0

@@ -421,7 +421,16 @@ INT read_event(char *pevent, INT off)
   g_transfered+=g_Notify_size_MB/1024/1024;
   if(g_transfered%4096==0) cm_msg(MINFO,"Data","Data collected: %d MB",g_transfered);
   
+  //Replace memcpy with I and Q sum
+
+
   memcpy(pdata16,((char*)pDigiMem)+g_PCPos,g_Len);
+
+
+
+
+
+
   // buffer is free for DMA transfer again
   spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)g_Len);
 

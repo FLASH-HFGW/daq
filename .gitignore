@@ -208,14 +208,14 @@ __marimo__/
 
 # Midas things
 *.xml
-.ALARM.SHM
-.ELOG.SHM
-.HISTORY.SHM
-.LOGGER_HISTORY_EVENTS.TXT
-.MSG.SHM
-.ODB.SHM
-.SHM_HOST.TXT
-.SHM_TYPE.TXT
-.SYSMSG.SHM
-.SYSTEM.SHM
-midas.log
+online/.ALARM.SHM
+online/.ELOG.SHM
+online/.HISTORY.SHM
+online/.LOGGER_HISTORY_EVENTS.TXT
+online/.MSG.SHM
+online/.ODB.SHM
+online/.SHM_HOST.TXT
+online/.SHM_TYPE.TXT
+online/.SYSMSG.SHM
+online/.SYSTEM.SHM
+online/midas.log

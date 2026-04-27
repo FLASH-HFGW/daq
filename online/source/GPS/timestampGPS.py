@@ -70,9 +70,13 @@ class MyPeriodicEquipment(midas.frontend.EquipmentBase):
         
         linea = self.ser.readline().decode('utf-8').strip()
         self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "timestamp"), linea)
+
+        event = midas.event.Event()
+
+        event.create_bank("TGPS",midas.TID_CHAR,linea.encode("ascii")+b"\0")
         
         self.set_status("Running")
-        return None
+        return event
 
 class MyFrontend(midas.frontend.FrontendBase):
     """

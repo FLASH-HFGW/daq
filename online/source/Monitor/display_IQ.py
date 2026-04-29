@@ -38,7 +38,7 @@ import midas.client
 
 def setup_iq_figure(grid=False):
     fig, axes = plt.subplots(
-        2, 2,
+        3, 2,
         figsize=(14, 9),
         facecolor="#DEDEDE",
         constrained_layout=True,
@@ -47,7 +47,9 @@ def setup_iq_figure(grid=False):
     ax_iq_time = axes[0, 0]
     ax_sum_time = axes[0, 1]
     ax_q_vs_i = axes[1, 0]
+    ax_ph_vs_time = axes[2, 0]
     ax_fft = axes[1, 1]
+    ax_fft_IpQ = axes[2, 1]
 
     ln_i, = ax_iq_time.plot([], [], linewidth=1.0, label="I")
     ln_q, = ax_iq_time.plot([], [], linewidth=1.0, label="Q")
@@ -56,15 +58,19 @@ def setup_iq_figure(grid=False):
 
     ln_qi, = ax_q_vs_i.plot([], [], ".", markersize=2)
 
+    ln_ph, = ax_ph_vs_time.plot([], [], linewidth=1.0, label="I+Q")
+
     ln_fft, = ax_fft.plot([], [], linewidth=1.0)
 
+    ln_fftIpQ, = ax_fft_IpQ.plot([], [], linewidth=1.0)
+
     ax_iq_time.set_title("I and Q vs time")
-    ax_iq_time.set_xlabel("sample")
+    ax_iq_time.set_xlabel("time (us)")
     ax_iq_time.set_ylabel("voltage [V]")
     ax_iq_time.legend(loc="best")
 
-    ax_sum_time.set_title("I + Q vs time")
-    ax_sum_time.set_xlabel("sample")
+    ax_sum_time.set_title("$\sqrt{I^{2} + Q^{2}}$ vs time")
+    ax_sum_time.set_xlabel("time (us)")
     ax_sum_time.set_ylabel("voltage [V]")
 
     ax_q_vs_i.set_title("IQ plane: Q vs I")
@@ -72,10 +78,19 @@ def setup_iq_figure(grid=False):
     ax_q_vs_i.set_ylabel("Q [V]")
     ax_q_vs_i.set_aspect("equal", adjustable="box")
 
-    ax_fft.set_title("FFT of I + Q")
+    ax_ph_vs_time.set_title("Q/I vs time")
+    ax_ph_vs_time.set_xlabel("time (us)")
+    ax_ph_vs_time.set_ylabel("Phase [rad]")
+
+    ax_fft.set_title("FFT of $\sqrt{I^{2} + Q^{2}}$")
     ax_fft.set_xlabel("frequency [MHz]")
     ax_fft.set_ylabel("amplitude [V]")
     ax_fft.set_yscale("log")
+
+    ax_fft_IpQ.set_title("FFT of I + iQ")
+    ax_fft_IpQ.set_xlabel("frequency [MHz]")
+    ax_fft_IpQ.set_ylabel("amplitude [V]")
+    ax_fft_IpQ.set_yscale("log")
 
     if grid:
         for ax in axes.ravel():
@@ -94,12 +109,16 @@ def setup_iq_figure(grid=False):
         "ax_iq_time": ax_iq_time,
         "ax_sum_time": ax_sum_time,
         "ax_q_vs_i": ax_q_vs_i,
+        "ax_ph_vs_time": ax_ph_vs_time,
         "ax_fft": ax_fft,
+        "ax_fft_IpQ": ax_fft_IpQ,
         "ln_i": ln_i,
         "ln_q": ln_q,
         "ln_sum": ln_sum,
         "ln_qi": ln_qi,
+        "ln_ph": ln_ph,
         "ln_fft": ln_fft,
+        "ln_fftIpQ": ln_fftIpQ,
     }
 
 
@@ -143,6 +162,35 @@ def compute_fft(x, fs):
 
     return freq, amp
 
+def compute_complex_fft(i_data, q_data, fs, sign=1, use_window=True, fftshift=True):
+    z = i_data.astype(np.float64) + 1j * (sign *q_data.astype(np.float64))
+
+    # rimuove offset DC complesso
+    z = z - np.mean(z)
+
+    N = z.size
+
+    if use_window:
+        w = np.hanning(N)
+        zw = z * w
+        norm = np.sum(w)
+    else:
+        zw = z
+        norm = N
+
+    freq = np.fft.fftfreq(N, d=1.0 / fs)
+    spec = np.fft.fft(zw)
+
+    # Ampiezza complessa normalizzata
+    amp = np.abs(spec) / norm
+
+    if fftshift:
+        freq = np.fft.fftshift(freq)
+        amp = np.fft.fftshift(amp)
+        spec = np.fft.fftshift(spec)
+
+    return freq, amp, spec
+
 
 def set_ylim_from_data(ax, y):
     ymin = float(np.min(y))
@@ -163,6 +211,7 @@ def update_iq_plot(handles, i_data, q_data, fs, hmin, hmax):
     i_data = np.asarray(i_data[:nsamp], dtype=np.float64).copy()
     q_data = np.asarray(q_data[:nsamp], dtype=np.float64).copy()
 
+    iq_square =(i_data**2+q_data**2)
     iq_sum = i_data + q_data
 
     smin = max(0, int(hmin))
@@ -172,17 +221,34 @@ def update_iq_plot(handles, i_data, q_data, fs, hmin, hmax):
         smin = 0
         emax = nsamp
 
-    x = np.arange(smin, emax)
+    #x = np.arange(smin, emax)
+    timebin = 0.2
+    x = np.arange(smin*timebin, emax*timebin,timebin)
 
     i_view = i_data[smin:emax]
     q_view = q_data[smin:emax]
-    sum_view = iq_sum[smin:emax]
+    #sum_view = iq_sum[smin:emax]
+    sum_view = iq_square[smin:emax]
+    
 
-    freq, amp = compute_fft(iq_sum, fs)
+    #Phase
+    phivec = np.arctan(q_data/i_data)
+    phi = np.average(phivec)
+    phi_view = phivec[smin:emax]
+
+    freq, amp = compute_fft(iq_square, fs)
     if freq is None:
         return False
 
     freq_mhz = freq / 1e6
+
+    complex_sign = -1     
+    freq_IpQ, amp_IpQ,_ = compute_complex_fft(i_data,q_data,fs,complex_sign)
+
+    if freq_IpQ is None:
+        return False
+
+    freq_mhz_IpQ = freq_IpQ / 1e6
 
     # 1) I and Q in time
     handles["ln_i"].set_xdata(x)
@@ -194,7 +260,7 @@ def update_iq_plot(handles, i_data, q_data, fs, hmin, hmax):
     handles["ax_iq_time"].set_xlim(float(x[0]), float(x[-1]))
     set_ylim_from_data(handles["ax_iq_time"], np.concatenate([i_view, q_view]))
 
-    # 2) I + Q in time
+    # 2) sqrt(I^2 + Q^2) in time
     handles["ln_sum"].set_xdata(x)
     handles["ln_sum"].set_ydata(sum_view)
 
@@ -220,17 +286,39 @@ def update_iq_plot(handles, i_data, q_data, fs, hmin, hmax):
     handles["ax_q_vs_i"].set_xlim(xmin - margin, xmax + margin)
     handles["ax_q_vs_i"].set_ylim(xmin - margin, xmax + margin)
 
+    handles["ax_q_vs_i"].set_title("IQ plane: Q vs I. Phase:{:.2f}".format(phi))
+
     # 4) FFT of I + Q
     handles["ln_fft"].set_xdata(freq_mhz)
     handles["ln_fft"].set_ydata(amp)
 
     handles["ax_fft"].set_xlim(0.0, fs / 2.0 / 1e6)
 
+    # 5) phase vs time
+    handles["ln_ph"].set_xdata(x)
+    handles["ln_ph"].set_ydata(phi_view)
+
+    handles["ax_ph_vs_time"].set_xlim(float(x[0]), float(x[-1]))
+    set_ylim_from_data(handles["ax_ph_vs_time"], phi_view)
+
+    # 6) FFT of I + iQ
+    handles["ln_fftIpQ"].set_xdata(freq_mhz_IpQ)
+    handles["ln_fftIpQ"].set_ydata(amp_IpQ)
+
+    handles["ax_fft_IpQ"].set_xlim(-fs / 2.0 / 1e6, fs / 2.0 / 1e6)
+
     positive = amp[amp > 0]
     if positive.size > 0:
         handles["ax_fft"].set_ylim(
             float(np.min(positive) * 0.5),
             float(np.max(positive) * 2.0),
+        )
+
+    positive2 = amp_IpQ[amp_IpQ > 0]
+    if positive2.size > 0:
+        handles["ax_fft_IpQ"].set_ylim(
+            float(np.min(positive2) * 0.5),
+            float(np.max(positive2) * 2.0),
         )
 
     return True

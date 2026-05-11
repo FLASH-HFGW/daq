@@ -286,6 +286,15 @@ INT begin_of_run(INT run_number, char *error)
   spcm_dwSetParam_i32 (hCardDigi, SPC_AMP5,           Channel_range_mV[5]);                  // max voltage amplitude
   spcm_dwSetParam_i32 (hCardDigi, SPC_AMP6,           Channel_range_mV[6]);                  // max voltage amplitude
   spcm_dwSetParam_i32 (hCardDigi, SPC_AMP7,           Channel_range_mV[7]);
+  spcm_dwSetParam_i32 (hCardDigi, SPC_50OHM0,         1);     // sets Ch termination to 50 Ohm
+  spcm_dwSetParam_i32 (hCardDigi, SPC_50OHM1,         1);
+  spcm_dwSetParam_i32 (hCardDigi, SPC_50OHM2,         1);
+  spcm_dwSetParam_i32 (hCardDigi, SPC_50OHM3,         1);
+  spcm_dwSetParam_i32 (hCardDigi, SPC_50OHM4,         1);
+  spcm_dwSetParam_i32 (hCardDigi, SPC_50OHM5,         1);
+  spcm_dwSetParam_i32 (hCardDigi, SPC_50OHM6,         1);
+  spcm_dwSetParam_i32 (hCardDigi, SPC_50OHM7,         1);
+
   spcm_dwSetParam_i32 (hCardDigi, SPC_PRETRIGGER,     Pretrigger_channels);                  	// pretrigger data at start of FIFO mode
   spcm_dwSetParam_i32 (hCardDigi, SPC_CARDMODE,       SPC_REC_FIFO_SINGLE);   // single FIFO mode
   spcm_dwSetParam_i32 (hCardDigi, SPC_TIMEOUT,        Timeout_ms);                  // timeout in ms

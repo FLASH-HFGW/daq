@@ -87,7 +87,7 @@ def setup_iq_figure(grid=False):
     ax_fft.set_ylabel("amplitude [V]")
     ax_fft.set_yscale("log")
 
-    ax_fft_IpQ.set_title("FFT of I + iQ")
+    ax_fft_IpQ.set_title("FFT of I - iQ")
     ax_fft_IpQ.set_xlabel("frequency [MHz]")
     ax_fft_IpQ.set_ylabel("amplitude [V]")
     ax_fft_IpQ.set_yscale("log")
@@ -211,7 +211,7 @@ def update_iq_plot(handles, i_data, q_data, fs, hmin, hmax):
     i_data = np.asarray(i_data[:nsamp], dtype=np.float64).copy()
     q_data = np.asarray(q_data[:nsamp], dtype=np.float64).copy()
 
-    iq_square =(i_data**2+q_data**2)
+    iq_square =np.sqrt((i_data**2+q_data**2))
     iq_sum = i_data + q_data
 
     smin = max(0, int(hmin))
@@ -230,8 +230,9 @@ def update_iq_plot(handles, i_data, q_data, fs, hmin, hmax):
     #sum_view = iq_sum[smin:emax]
     sum_view = iq_square[smin:emax]
     
-
+    
     #Phase
+    i_data[i_data==0]=0.000000001
     phivec = np.arctan(q_data/i_data)
     phi = np.average(phivec)
     phi_view = phivec[smin:emax]
@@ -301,7 +302,7 @@ def update_iq_plot(handles, i_data, q_data, fs, hmin, hmax):
     handles["ax_ph_vs_time"].set_xlim(float(x[0]), float(x[-1]))
     set_ylim_from_data(handles["ax_ph_vs_time"], phi_view)
 
-    # 6) FFT of I + iQ
+    # 6) FFT of I - iQ
     handles["ln_fftIpQ"].set_xdata(freq_mhz_IpQ)
     handles["ln_fftIpQ"].set_ydata(amp_IpQ)
 

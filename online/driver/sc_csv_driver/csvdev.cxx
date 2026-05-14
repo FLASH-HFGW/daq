@@ -70,7 +70,7 @@ typedef INT(func_t) (INT cmd, ...);
 //Path to csv config
 static std::string PATH_TO_CONFIG = "/home/cold/daq/online/driver/sc_csv_driver/config_csv.conf";
 /*Static global handle for the database odb*/
-static HNDLE hDB;
+static HNDLE hDB_dd;
 
 /*Custom functions*/
 
@@ -198,10 +198,10 @@ INT csv_init(HNDLE hkey, CSVDEV_INFO **pinfo, INT channels, func_t *bd)
    info = (CSVDEV_INFO*) calloc(1, sizeof(CSVDEV_INFO));
    *pinfo = info;
 
-   cm_get_experiment_database(&hDB, NULL);
+   cm_get_experiment_database(&hDB_dd, NULL);
    //Find the name of current equipment
    std::string equip_name;
-   equip_name = split(db_get_path(hDB,hkey),'/')[2];     //First element is null, second is Equipment, third is this equipment name
+   equip_name = split(db_get_path(hDB_dd,hkey),'/')[2];     //First element is null, second is Equipment, third is this equipment name
 
    //Read from config the equivalent of CSVDEVSETTINGS of the specific equipment
    std::ifstream file(PATH_TO_CONFIG.c_str());
@@ -251,22 +251,22 @@ INT csv_init(HNDLE hkey, CSVDEV_INFO **pinfo, INT channels, func_t *bd)
    file.close();
 
    /* create CSVDEV settings record */
-   status = db_create_record(hDB, hkey, "DD", CSVDEV_SETTINGS_STR);
+   status = db_create_record(hDB_dd, hkey, "DD", CSVDEV_SETTINGS_STR);
    if (status != DB_SUCCESS)      return FE_ERR_ODB;
-   db_find_key(hDB, hkey, "DD", &hkeydd);
+   db_find_key(hDB_dd, hkey, "DD", &hkeydd);
 
    //Overwrite CSVSETTINGS
-   db_find_key(hDB, hkeydd, "Path",      &hfield);
-   db_set_data(hDB, hfield, path_conf.c_str(),  256, 1, TID_STRING); 
-   db_find_key(hDB, hkeydd, "Basefile",  &hfield);
-   db_set_data(hDB, hfield, base_conf.c_str(),   64, 1, TID_STRING);
-   db_find_key(hDB, hkeydd, "Extension", &hfield);
-   db_set_data(hDB, hfield, exten_conf.c_str(),    16, 1, TID_STRING);
-   db_find_key(hDB, hkeydd, "Header_line", &hfield);
-   db_set_data(hDB, hfield, header_line.c_str(),    16, 1, TID_STRING);
+   db_find_key(hDB_dd, hkeydd, "Path",      &hfield);
+   db_set_data(hDB_dd, hfield, path_conf.c_str(),  256, 1, TID_STRING); 
+   db_find_key(hDB_dd, hkeydd, "Basefile",  &hfield);
+   db_set_data(hDB_dd, hfield, base_conf.c_str(),   64, 1, TID_STRING);
+   db_find_key(hDB_dd, hkeydd, "Extension", &hfield);
+   db_set_data(hDB_dd, hfield, exten_conf.c_str(),    16, 1, TID_STRING);
+   db_find_key(hDB_dd, hkeydd, "Header_line", &hfield);
+   db_set_data(hDB_dd, hfield, header_line.c_str(),    16, 1, TID_STRING);
    //Write actual config in csvdev_settings
    size = sizeof(info->csvdev_settings);
-   db_get_record(hDB, hkeydd, &info->csvdev_settings, &size, 0);
+   db_get_record(hDB_dd, hkeydd, &info->csvdev_settings, &size, 0);
 
    /* initialize driver */
    info->num_channels = channels;
@@ -318,6 +318,11 @@ INT csvdev_set(CSVDEV_INFO * info, INT channel, float value)
 
 INT csvdev_get(CSVDEV_INFO * info, INT channel, float *pvalue)
 {
+   //DEBUG
+   //std::string equip_name;
+   //equip_name = split(db_get_path(hDB_dd,info->hkey),'/')[2];
+   //std::cout<<"Read\n"<<equip_name<<std::endl;
+   
    char str[80];
 
    *pvalue = (float) atof(str);
@@ -333,16 +338,16 @@ INT csvdev_get(CSVDEV_INFO * info, INT channel, float *pvalue)
    if(channel==0)
    {
       HNDLE hkeydd;
-      db_find_key(hDB, info->hkey, "DD", &hkeydd);
+      db_find_key(hDB_dd, info->hkey, "DD", &hkeydd);
       int size = sizeof(info->csvdev_settings);
-      db_get_record(hDB, hkeydd, &info->csvdev_settings, &size, 0);
+      db_get_record(hDB_dd, hkeydd, &info->csvdev_settings, &size, 0);
       std::string filename;
       filename = get_most_recent_file(info->csvdev_settings.path,info->csvdev_settings.basefile,info->csvdev_settings.extension);
       //get last line
       std::vector<std::string> line_pieces;
       line_pieces = get_N_row_as_list(filename,-1);
       std::string equip_name;
-      equip_name = split(db_get_path(hDB,info->hkey),'/')[2];
+      equip_name = split(db_get_path(hDB_dd,info->hkey),'/')[2];
       
       for(long unsigned int i=0;i<line_pieces.size()-1;i++)
       {

@@ -60,7 +60,7 @@ EQUIPMENT equipment[] = {
      20000,                     /* produce event every x msec */
      0,                         /* stop run after this event limit */
      0,                         /* number of sub events */
-     10000,                         /* log history every second */
+     10,                         /* log history every second */
      "", "", ""} ,
     cd_multi_read,              /* readout routine */
     cd_multi,                   /* class driver main routine */
@@ -78,7 +78,7 @@ EQUIPMENT equipment[] = {
      20000,                     /* produce event every x msec */
      0,                         /* stop run after this event limit */
      0,                         /* number of sub events */
-     10000,                         /* log history every second */
+     10,                         /* log history every second */
      "", "", ""} ,
     cd_multi_read,              /* readout routine */
     cd_multi,                   /* class driver main routine */
@@ -96,7 +96,7 @@ EQUIPMENT equipment[] = {
      20000,                     /* produce event every x msec */
      0,                         /* stop run after this event limit */
      0,                         /* number of sub events */
-     10000,                         /* log history every second */
+     10,                         /* log history every second */
      "", "", ""} ,
     cd_multi_read,              /* readout routine */
     cd_multi,                   /* class driver main routine */

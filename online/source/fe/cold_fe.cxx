@@ -25,7 +25,6 @@
 #include <stdexcept>
 #include <algorithm>
 #include <chrono>
-#include <thread>
 
 
 // ----- include standard driver header from library -----
@@ -222,7 +221,11 @@ INT frontend_init()
 
 INT frontend_exit()
 {
-  if(pDigiMem != nullptr) vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);
+  if(pDigiMem != nullptr)
+  {
+    vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);
+    pDigiMem = nullptr;
+  }
   spcm_vClose (hCardDigi);
   return SUCCESS;
 
@@ -312,8 +315,12 @@ INT begin_of_run(INT run_number, char *error)
 
 
   spcm_dwSetParam_i32 (hCardDigi, SPC_M2CMD, M2CMD_CARD_WRITESETUP);
-
-  if(pDigiMem != nullptr) vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);
+  
+  if(pDigiMem != nullptr) 
+  {
+    vFreeMemPageAligned (pDigiMem, (uint64) g_BufferSize_GB);
+    pDigiMem = nullptr;
+  }
 
   pDigiMem = (int16*) pvAllocMemPageAligned ((uint64) g_BufferSize_GB);
   if (!pDigiMem)
@@ -380,6 +387,10 @@ INT poll_event(INT source, INT count, BOOL test)
    is available. If test equals TRUE, don't return. The test
    flag is used to time the polling */
 {
+  int Enable_poll=-1; 
+  g_size = sizeof(Enable_poll);   //Variable which enables or disarms poll function
+  db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Enable_poll",&Enable_poll,&g_size,TID_INT,FALSE);
+  if(Enable_poll==0) return FALSE;
 
   while(count--)
   {
@@ -447,6 +458,10 @@ INT read_event(char *pevent, INT off)
 
 INT StartAcq()
 {
+  int Enable_poll=1;    //Variable which enables or disarms poll function
+  g_size = sizeof(Enable_poll);
+  db_set_value(hDB,0,"Equipment/NetBox/Settings/Enable_poll",&Enable_poll, g_size,1,TID_INT);
+
   dwError = spcm_dwSetParam_i32 (hCardDigi, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER | M2CMD_DATA_STARTDMA);
   if (dwError != ERR_OK)
   {
@@ -462,9 +477,12 @@ INT StartAcq()
 }
 INT StopAcq()
 {
+  int Enable_poll=0;    //Variable which enables or disarms poll function
+  g_size = sizeof(Enable_poll);
+  db_set_value(hDB,0,"Equipment/NetBox/Settings/Enable_poll",&Enable_poll, g_size,1,TID_INT);
+
   dwError = spcm_dwSetParam_i32 (hCardDigi, SPC_M2CMD, M2CMD_CARD_STOP | M2CMD_DATA_STOPDMA);
   
-
   if (dwError != ERR_OK)
   {
     spcm_dwGetErrorInfo_i32 (hCardDigi, NULL, NULL, szErrorTextBuffer);

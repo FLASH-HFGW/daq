@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html class="mcss" lang="en">
+
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="midas.css">
+<script src="controls.js"></script>
+<script src="midas.js"></script>
+<script src="mhttpd.js"></script>
+<script src="mhistory.js"></script>
+
+<style>
+.mydiv {
+  cursor: pointer;
+  color:#0000FF;
+}
+.mydiv:link { color:#0000FF; text-decoration:none }
+.mydiv:visited { color:#800080; text-decoration:none }
+.mydiv:hover { color:#0000FF; text-decoration:underline }
+.mydiv:active { color:#0000FF; text-decoration:underline }
+.mydiv:focus { color:#0000FF; text-decoration:none; }
+
+input[type=number] {
+  font-size: 100%;
+  width: 140px;
+  padding: 5px;
+}
+
+input[type=number][disabled]{
+  color:transparent;
+  background-color:transparent;
+  border-width: 0px;
+}
+
+.mtable td {
+  padding: 8px;
+}
+
+.loBox {
+  font-size:18px;
+  margin-bottom:25px;
+}
+
+.setcell {
+  white-space: nowrap;
+}
+
+.statusText {
+  font-size: 13px;
+  color: #555;
+  margin-bottom: 10px;
+}
+
+.outputIndicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 90px;
+  padding: 5px 10px;
+  border-radius: 14px;
+  font-weight: bold;
+  border: 1px solid #999;
+  background-color: #f2f2f2;
+  color: #333;
+}
+
+.outputIndicator::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  background-color: #999;
+  box-shadow: 0 0 5px #999;
+}
+
+.outputOn {
+  color: #0b6b0b;
+  border-color: #0b6b0b;
+  background-color: #e9f8e9;
+}
+
+.outputOn::before {
+  background-color: #00b000;
+  box-shadow: 0 0 8px #00b000;
+}
+
+.outputOff {
+  color: #8b0000;
+  border-color: #8b0000;
+  background-color: #fdecec;
+}
+
+.outputOff::before {
+  background-color: #d00000;
+  box-shadow: 0 0 8px #d00000;
+}
+
+.outputUnknown {
+  color: #555;
+  border-color: #aaa;
+  background-color: #f2f2f2;
+}
+
+.outputUnknown::before {
+  background-color: #999;
+  box-shadow: 0 0 5px #999;
+}
+
+.changeFlagBox {
+  font-size: 16px;
+  margin: 8px 0 18px 0;
+  padding: 10px;
+  border: 1px solid #bbb;
+  background-color: #f7f7f7;
+}
+</style>
+
+<script>
+
+/*
+  Important:
+  - Frequency and amplitude values written by this page should use FLOAT or DOUBLE ODB keys.
+  - ON/OFF values are binary states and are written as integers: 0 = OFF, 1 = ON.
+
+  If an existing ODB key has the wrong type, mjsonrpc_db_paste() will not change
+  its type automatically. Delete/recreate the key with the correct type, or change
+  the frontend so that it creates the variables with the desired type.
+*/
+
+const RS_LO_FREQ_PATH      = "/Equipment/LocalOscill/Variables/freq RS";
+const RS_LO_POWER_PATH     = "/Equipment/LocalOscill/Variables/power RS";
+const RS_LO_OUTPUT_PATH    = "/Equipment/LocalOscill/Variables/onoff RS";
+
+const TELEDYNE_CH1_FREQ_PATH = "/Equipment/LocalOscill/Variables/freq Teled Ch1";
+const TELEDYNE_CH1_VPP_PATH  = "/Equipment/LocalOscill/Variables/Vpp Teled Ch1";
+const TELEDYNE_CH1_OUTPUT_PATH = "/Equipment/LocalOscill/Variables/onoff Teled Ch1";
+
+const TELEDYNE_CH2_FREQ_PATH = "/Equipment/LocalOscill/Variables/freq Teled Ch2";
+const TELEDYNE_CH2_VPP_PATH  = "/Equipment/LocalOscill/Variables/Vpp Teled Ch2";
+const TELEDYNE_CH2_OUTPUT_PATH = "/Equipment/LocalOscill/Variables/onoff Teled Ch2";
+
+/*
+  Global user-command flag.
+  This ODB variable is written as a boolean:
+    true  = the last user command requested a change with respect to the last readback value
+    false = the last user command requested the same value already present in the last readback
+
+  Create this key in the ODB as BOOL. If your frontend expects an INT32 instead,
+  change writeOdbBoolean() so that it writes 1/0 instead of true/false.
+*/
+const USER_COMMAND_CHANGED_PATH = "/Equipment/LocalOscill/Variables/hasChanged";
+
+const READBACK_PERIOD_MS = 1000;
+const NUMERIC_CHANGE_TOLERANCE = 1e-9;
+
+var currentOdbValues = {};
+
+window.onload = function() {
+  mhttpd_init('Local Oscillators');
+  mhistory_init();
+  readAllOdbValues();
+  window.setInterval(readAllOdbValues, READBACK_PERIOD_MS);
+}
+
+function extractNumericValue(odbValue) {
+  /*
+    MIDAS can return/display values as numbers or as strings.
+    This parser accepts:
+      100000000
+      "100000000"
+      "100000000 (0x05F5E100)"
+      "1.000000e+08"
+    and extracts the leading decimal/scientific numeric value.
+  */
+
+  if (typeof odbValue === "number") {
+    return odbValue;
+  }
+
+  if (typeof odbValue === "string") {
+    var match = odbValue.trim().match(/[-+]?\d+(\.\d+)?([eE][-+]?\d+)?/);
+    if (match) {
+      return Number(match[0]);
+    }
+  }
+
+  return NaN;
+}
+
+
+function extractBooleanValue(odbValue) {
+  if (typeof odbValue === "boolean") {
+    return odbValue;
+  }
+
+  if (typeof odbValue === "number") {
+    return odbValue !== 0;
+  }
+
+  if (typeof odbValue === "string") {
+    var text = odbValue.trim().toLowerCase();
+    if (text === "true" || text === "yes" || text === "on") {
+      return true;
+    }
+    if (text === "false" || text === "no" || text === "off") {
+      return false;
+    }
+
+    var numericValue = extractNumericValue(odbValue);
+    if (Number.isFinite(numericValue)) {
+      return numericValue !== 0;
+    }
+  }
+
+  return null;
+}
+
+function updateChangeFlagIndicator(elementId, value) {
+  var element = document.getElementById(elementId);
+
+  element.classList.remove("outputOn", "outputOff", "outputUnknown");
+
+  if (value === true) {
+    element.innerText = "TRUE";
+    element.classList.add("outputOn");
+  } else if (value === false) {
+    element.innerText = "FALSE";
+    element.classList.add("outputOff");
+  } else {
+    element.innerText = "UNKNOWN";
+    element.classList.add("outputUnknown");
+  }
+}
+
+function didRequestedValueChange(odbPath, requestedValue) {
+  var previousValue = currentOdbValues[odbPath];
+
+  if (!Number.isFinite(previousValue)) {
+    /*
+      If the current readback is not available, assume that the user command
+      represents a change. This is safer than reporting FALSE with no readback.
+    */
+    return true;
+  }
+
+  return Math.abs(previousValue - requestedValue) > NUMERIC_CHANGE_TOLERANCE;
+}
+
+function writeUserCommandChangedFlag(changed) {
+  writeOdbBoolean(USER_COMMAND_CHANGED_PATH, changed, "hasChanged flag");
+}
+
+function formatNumber(value, digits) {
+  if (!Number.isFinite(value)) {
+    return "---";
+  }
+  return value.toFixed(digits);
+}
+
+function formatOnOff(value) {
+  if (!Number.isFinite(value)) {
+    return "UNKNOWN";
+  }
+  return (value >= 0.5) ? "ON" : "OFF";
+}
+
+function updateOutputIndicator(elementId, value) {
+  var element = document.getElementById(elementId);
+  var stateText = formatOnOff(value);
+
+  element.innerText = stateText;
+  element.classList.remove("outputOn", "outputOff", "outputUnknown");
+
+  if (!Number.isFinite(value)) {
+    element.classList.add("outputUnknown");
+  } else if (value >= 0.5) {
+    element.classList.add("outputOn");
+  } else {
+    element.classList.add("outputOff");
+  }
+}
+
+function readAllOdbValues() {
+
+  var paths = [
+    RS_LO_FREQ_PATH,
+    RS_LO_POWER_PATH,
+    RS_LO_OUTPUT_PATH,
+    TELEDYNE_CH1_FREQ_PATH,
+    TELEDYNE_CH1_VPP_PATH,
+    TELEDYNE_CH1_OUTPUT_PATH,
+    TELEDYNE_CH2_FREQ_PATH,
+    TELEDYNE_CH2_VPP_PATH,
+    TELEDYNE_CH2_OUTPUT_PATH,
+    USER_COMMAND_CHANGED_PATH
+  ];
+
+  mjsonrpc_db_get_values(paths).then(function(rpc) {
+
+    if (!rpc || !rpc.result || !rpc.result.data) {
+      document.getElementById("readStatus").innerText = "Readback error: invalid MIDAS RPC response.";
+      return;
+    }
+
+    var data = rpc.result.data;
+    var status = rpc.result.status || [];
+
+    var rsFreqHz  = extractNumericValue(data[0]);
+    var rsPower   = extractNumericValue(data[1]);
+    var rsOutput  = extractNumericValue(data[2]);
+    var ch1FreqHz = extractNumericValue(data[3]);
+    var ch1Vpp    = extractNumericValue(data[4]);
+    var ch1Output = extractNumericValue(data[5]);
+    var ch2FreqHz = extractNumericValue(data[6]);
+    var ch2Vpp    = extractNumericValue(data[7]);
+    var ch2Output = extractNumericValue(data[8]);
+    var userCommandChanged = extractBooleanValue(data[9]);
+
+    currentOdbValues[RS_LO_FREQ_PATH] = rsFreqHz;
+    currentOdbValues[RS_LO_POWER_PATH] = rsPower;
+    currentOdbValues[RS_LO_OUTPUT_PATH] = rsOutput;
+    currentOdbValues[TELEDYNE_CH1_FREQ_PATH] = ch1FreqHz;
+    currentOdbValues[TELEDYNE_CH1_VPP_PATH] = ch1Vpp;
+    currentOdbValues[TELEDYNE_CH1_OUTPUT_PATH] = ch1Output;
+    currentOdbValues[TELEDYNE_CH2_FREQ_PATH] = ch2FreqHz;
+    currentOdbValues[TELEDYNE_CH2_VPP_PATH] = ch2Vpp;
+    currentOdbValues[TELEDYNE_CH2_OUTPUT_PATH] = ch2Output;
+    currentOdbValues[USER_COMMAND_CHANGED_PATH] = userCommandChanged;
+
+    document.getElementById("rsLoFreqGHzDisplay").innerText        = formatNumber(rsFreqHz / 1e9, 9);
+    document.getElementById("rsLoPowerDisplay").innerText          = formatNumber(rsPower, 6);
+    updateOutputIndicator("rsLoOutputDisplay", rsOutput);
+    document.getElementById("teledyneCh1FreqMHzDisplay").innerText = formatNumber(ch1FreqHz / 1e6, 6);
+    document.getElementById("teledyneCh1VppDisplay").innerText     = formatNumber(ch1Vpp, 6);
+    updateOutputIndicator("teledyneCh1OutputDisplay", ch1Output);
+    document.getElementById("teledyneCh2FreqMHzDisplay").innerText = formatNumber(ch2FreqHz / 1e6, 6);
+    document.getElementById("teledyneCh2VppDisplay").innerText     = formatNumber(ch2Vpp, 6);
+    updateOutputIndicator("teledyneCh2OutputDisplay", ch2Output);
+    updateChangeFlagIndicator("hasChangedDisplay", userCommandChanged);
+
+    document.getElementById("readStatus").innerText = "Readback updated. Status: " + status;
+
+  }).catch(function(error) {
+    document.getElementById("readStatus").innerText = "Readback error.";
+    mjsonrpc_error_alert(error);
+  });
+
+}
+
+
+function writeOdbBoolean(odbPath, valueBoolean, parameterName) {
+
+  var boolValue = Boolean(valueBoolean);
+
+  mjsonrpc_db_paste([odbPath], [boolValue]).then(function(rpc) {
+
+    console.log("ODB boolean write", {
+      parameter: parameterName,
+      path: odbPath,
+      value: boolValue,
+      rpc: rpc
+    });
+
+    if (rpc && rpc.result && rpc.result.status) {
+      var status = rpc.result.status;
+      var firstStatus = Array.isArray(status) ? status[0] : status;
+
+      if (firstStatus !== 1) {
+        alert("ODB write failed for " + parameterName +
+              ".\nPath: " + odbPath +
+              "\nStatus: " + firstStatus);
+        return;
+      }
+    }
+
+    currentOdbValues[odbPath] = boolValue;
+    updateChangeFlagIndicator("hasChangedDisplay", boolValue);
+
+  }).catch(function(error) {
+    mjsonrpc_error_alert(error);
+  });
+
+}
+
+function writeOdbFloat(odbPath, valueNumber, parameterName) {
+
+  if (!Number.isFinite(valueNumber)) {
+    alert("Invalid value for " + parameterName + ".");
+    return;
+  }
+
+  /*
+    Force a floating-point JavaScript number.
+    Do not convert to string, otherwise MIDAS can create/keep STRING keys.
+  */
+  var floatValue = Number(valueNumber.toFixed(6));
+
+  mjsonrpc_db_paste([odbPath], [floatValue]).then(function(rpc) {
+
+    console.log("ODB float write", {
+      parameter: parameterName,
+      path: odbPath,
+      value: floatValue,
+      rpc: rpc
+    });
+
+    if (rpc && rpc.result && rpc.result.status) {
+      var status = rpc.result.status;
+      var firstStatus = Array.isArray(status) ? status[0] : status;
+
+      if (firstStatus !== 1) {
+        alert("ODB write failed for " + parameterName +
+              ".\nPath: " + odbPath +
+              "\nStatus: " + firstStatus);
+        return;
+      }
+    }
+
+    var changed = didRequestedValueChange(odbPath, floatValue);
+
+    document.getElementById("writeStatus").innerText =
+      parameterName + " written as floating-point value: " + floatValue +
+      "  |  Path: " + odbPath +
+      "  |  Requested change: " + changed;
+
+    currentOdbValues[odbPath] = floatValue;
+    writeUserCommandChangedFlag(changed);
+    readAllOdbValues();
+
+  }).catch(function(error) {
+    mjsonrpc_error_alert(error);
+  });
+
+}
+
+function writeOdbInt(odbPath, valueNumber, parameterName) {
+
+  if (!Number.isFinite(valueNumber)) {
+    alert("Invalid value for " + parameterName + ".");
+    return;
+  }
+
+  var intValue = valueNumber ? 1 : 0;
+
+  mjsonrpc_db_paste([odbPath], [intValue]).then(function(rpc) {
+
+    console.log("ODB integer write", {
+      parameter: parameterName,
+      path: odbPath,
+      value: intValue,
+      rpc: rpc
+    });
+
+    if (rpc && rpc.result && rpc.result.status) {
+      var status = rpc.result.status;
+      var firstStatus = Array.isArray(status) ? status[0] : status;
+
+      if (firstStatus !== 1) {
+        alert("ODB write failed for " + parameterName +
+              ".\nPath: " + odbPath +
+              "\nStatus: " + firstStatus);
+        return;
+      }
+    }
+
+    var changed = didRequestedValueChange(odbPath, intValue);
+
+    document.getElementById("writeStatus").innerText =
+      parameterName + " written as integer value: " + intValue +
+      "  |  Path: " + odbPath +
+      "  |  Requested change: " + changed;
+
+    currentOdbValues[odbPath] = intValue;
+    writeUserCommandChangedFlag(changed);
+    readAllOdbValues();
+
+  }).catch(function(error) {
+    mjsonrpc_error_alert(error);
+  });
+
+}
+
+function setScaledOdbFloat(inputId, odbPath, parameterName, scaleFactor, roundToIntegerHz) {
+
+  var inputElement = document.getElementById(inputId);
+  var inputText = inputElement.value.trim();
+
+  if (inputText === "") {
+    alert("Please enter a value for " + parameterName + ".");
+    return;
+  }
+
+  var userValue = Number(inputText);
+
+  if (!Number.isFinite(userValue)) {
+    alert("Please enter a valid numeric value for " + parameterName + ".");
+    return;
+  }
+
+  var odbValue = userValue * scaleFactor;
+
+  /*
+    Frequency values are still written as floating-point values, but the Hz
+    value is rounded first to remove binary floating-point artifacts such as
+    8.2 GHz -> 8199999999.999999 Hz.
+  */
+  if (roundToIntegerHz) {
+    odbValue = Math.round(odbValue);
+  }
+
+  writeOdbFloat(odbPath, odbValue, parameterName);
+
+}
+
+function setRsLoFrequency() {
+  /* Input in GHz, ODB in Hz. */
+  setScaledOdbFloat("rsLoFreqSetValue", RS_LO_FREQ_PATH, "RS LO frequency", 1e9, true);
+}
+
+function setRsLoPower() {
+  setScaledOdbFloat("rsLoPowerSetValue", RS_LO_POWER_PATH, "RS LO power", 1.0);
+}
+
+function setTeledyneCh1Frequency() {
+  /* Input in MHz, ODB in Hz. */
+  setScaledOdbFloat("teledyneCh1FreqSetValue", TELEDYNE_CH1_FREQ_PATH, "Teledyne CH1 frequency", 1e6, true);
+}
+
+function setTeledyneCh1Vpp() {
+  setScaledOdbFloat("teledyneCh1VppSetValue", TELEDYNE_CH1_VPP_PATH, "Teledyne CH1 Vpp", 1.0);
+}
+
+function setTeledyneCh2Frequency() {
+  /* Input in MHz, ODB in Hz. */
+  setScaledOdbFloat("teledyneCh2FreqSetValue", TELEDYNE_CH2_FREQ_PATH, "Teledyne CH2 frequency", 1e6, true);
+}
+
+function setTeledyneCh2Vpp() {
+  setScaledOdbFloat("teledyneCh2VppSetValue", TELEDYNE_CH2_VPP_PATH, "Teledyne CH2 Vpp", 1.0);
+}
+
+function setOutputState(odbPath, parameterName, state) {
+  /*
+    OFF is written as integer 0 and ON as integer 1.
+    The corresponding ODB keys can be INT32.
+  */
+  var value = state ? 1 : 0;
+  writeOdbInt(odbPath, value, parameterName);
+}
+
+function setRsLoOn() {
+  setOutputState(RS_LO_OUTPUT_PATH, "RS LO output", true);
+}
+
+function setRsLoOff() {
+  setOutputState(RS_LO_OUTPUT_PATH, "RS LO output", false);
+}
+
+function setTeledyneCh1On() {
+  setOutputState(TELEDYNE_CH1_OUTPUT_PATH, "Teledyne CH1 output", true);
+}
+
+function setTeledyneCh1Off() {
+  setOutputState(TELEDYNE_CH1_OUTPUT_PATH, "Teledyne CH1 output", false);
+}
+
+function setTeledyneCh2On() {
+  setOutputState(TELEDYNE_CH2_OUTPUT_PATH, "Teledyne CH2 output", true);
+}
+
+function setTeledyneCh2Off() {
+  setOutputState(TELEDYNE_CH2_OUTPUT_PATH, "Teledyne CH2 output", false);
+}
+
+</script>
+
+<title>Local Oscillators</title>
+
+</head>
+
+<body class="mcss">
+
+  <div id="mheader"></div>
+  <div id="msidenav"></div>
+
+  <div id="mmain">
+
+    <div id="readStatus" class="statusText">Readback not yet updated.</div>
+    <div id="writeStatus" class="statusText">No write command sent yet.</div>
+
+    <div class="changeFlagBox">
+      User command changed flag:
+      <span id="hasChangedDisplay" class="outputIndicator outputUnknown">UNKNOWN</span>
+      <br>
+      <span class="statusText">TRUE if the last user SET/ON/OFF command requested a different value from the last ODB readback; FALSE if the requested value was already present.</span>
+    </div>
+
+    <!-- RS LO box -->
+    <table class="mtable loBox">
+      <tr>
+        <th class="mtableheader" colspan="5">RS LO</th>
+      </tr>
+
+      <tr align="center">
+        <th width="220">Parameter</th>
+        <th width="220">Current value</th>
+        <th width="120">Unit</th>
+        <th width="220">Set value</th>
+        <th width="120">Command</th>
+      </tr>
+
+      <tr align="center">
+        <td>Current frequency</td>
+        <td style="font-weight:bold;color:green"><span id="rsLoFreqGHzDisplay">---</span></td>
+        <td>GHz</td>
+        <td class="setcell"><input id="rsLoFreqSetValue" type="number" step="any" placeholder="Frequency [GHz]"></td>
+        <td><input class="mbutton" id="btnRsLoSetFreq" type="button" value="SET" onclick="setRsLoFrequency()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+
+      <tr align="center">
+        <td>Current power</td>
+        <td style="font-weight:bold;color:green"><span id="rsLoPowerDisplay">---</span></td>
+        <td>dBm</td>
+        <td class="setcell"><input id="rsLoPowerSetValue" type="number" step="any" placeholder="Power [dBm]"></td>
+        <td><input class="mbutton" id="btnRsLoSetPower" type="button" value="SET" onclick="setRsLoPower()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+      <tr align="center">
+        <td>Output state</td>
+        <td style="font-weight:bold;color:green"><span id="rsLoOutputDisplay" class="outputIndicator outputUnknown">UNKNOWN</span></td>
+        <td>ON/OFF</td>
+        <td class="setcell">Use buttons to enable/disable output</td>
+        <td>
+          <input class="mbutton" id="btnRsLoOn" type="button" value="ON" onclick="setRsLoOn()" style="padding: 7px 20px;font-size:18px;margin:5px">
+          <input class="mbutton" id="btnRsLoOff" type="button" value="OFF" onclick="setRsLoOff()" style="padding: 7px 20px;font-size:18px;margin:5px">
+        </td>
+      </tr>
+    </table>
+
+    <!-- Teledyne CH1 box -->
+    <table class="mtable loBox">
+      <tr>
+        <th class="mtableheader" colspan="5">Teledyne CH1</th>
+      </tr>
+
+      <tr align="center">
+        <th width="220">Parameter</th>
+        <th width="220">Current value</th>
+        <th width="120">Unit</th>
+        <th width="220">Set value</th>
+        <th width="120">Command</th>
+      </tr>
+
+      <tr align="center">
+        <td>Current frequency</td>
+        <td style="font-weight:bold;color:green"><span id="teledyneCh1FreqMHzDisplay">---</span></td>
+        <td>MHz</td>
+        <td class="setcell"><input id="teledyneCh1FreqSetValue" type="number" step="any" placeholder="Frequency [MHz]"></td>
+        <td><input class="mbutton" id="btnTeledyneCh1SetFreq" type="button" value="SET" onclick="setTeledyneCh1Frequency()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+
+      <tr align="center">
+        <td>Current Vpp</td>
+        <td style="font-weight:bold;color:green"><span id="teledyneCh1VppDisplay">---</span></td>
+        <td>V</td>
+        <td class="setcell"><input id="teledyneCh1VppSetValue" type="number" step="any" placeholder="Vpp [V]"></td>
+        <td><input class="mbutton" id="btnTeledyneCh1SetVpp" type="button" value="SET" onclick="setTeledyneCh1Vpp()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+      <tr align="center">
+        <td>Output state</td>
+        <td style="font-weight:bold;color:green"><span id="teledyneCh1OutputDisplay" class="outputIndicator outputUnknown">UNKNOWN</span></td>
+        <td>ON/OFF</td>
+        <td class="setcell">Use buttons to enable/disable output</td>
+        <td>
+          <input class="mbutton" id="btnTeledyneCh1On" type="button" value="ON" onclick="setTeledyneCh1On()" style="padding: 7px 20px;font-size:18px;margin:5px">
+          <input class="mbutton" id="btnTeledyneCh1Off" type="button" value="OFF" onclick="setTeledyneCh1Off()" style="padding: 7px 20px;font-size:18px;margin:5px">
+        </td>
+      </tr>
+    </table>
+
+    <!-- Teledyne CH2 box -->
+    <table class="mtable loBox">
+      <tr>
+        <th class="mtableheader" colspan="5">Teledyne CH2</th>
+      </tr>
+
+      <tr align="center">
+        <th width="220">Parameter</th>
+        <th width="220">Current value</th>
+        <th width="120">Unit</th>
+        <th width="220">Set value</th>
+        <th width="120">Command</th>
+      </tr>
+
+      <tr align="center">
+        <td>Current frequency</td>
+        <td style="font-weight:bold;color:green"><span id="teledyneCh2FreqMHzDisplay">---</span></td>
+        <td>MHz</td>
+        <td class="setcell"><input id="teledyneCh2FreqSetValue" type="number" step="any" placeholder="Frequency [MHz]"></td>
+        <td><input class="mbutton" id="btnTeledyneCh2SetFreq" type="button" value="SET" onclick="setTeledyneCh2Frequency()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+
+      <tr align="center">
+        <td>Current Vpp</td>
+        <td style="font-weight:bold;color:green"><span id="teledyneCh2VppDisplay">---</span></td>
+        <td>V</td>
+        <td class="setcell"><input id="teledyneCh2VppSetValue" type="number" step="any" placeholder="Vpp [V]"></td>
+        <td><input class="mbutton" id="btnTeledyneCh2SetVpp" type="button" value="SET" onclick="setTeledyneCh2Vpp()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+      <tr align="center">
+        <td>Output state</td>
+        <td style="font-weight:bold;color:green"><span id="teledyneCh2OutputDisplay" class="outputIndicator outputUnknown">UNKNOWN</span></td>
+        <td>ON/OFF</td>
+        <td class="setcell">Use buttons to enable/disable output</td>
+        <td>
+          <input class="mbutton" id="btnTeledyneCh2On" type="button" value="ON" onclick="setTeledyneCh2On()" style="padding: 7px 20px;font-size:18px;margin:5px">
+          <input class="mbutton" id="btnTeledyneCh2Off" type="button" value="OFF" onclick="setTeledyneCh2Off()" style="padding: 7px 20px;font-size:18px;margin:5px">
+        </td>
+      </tr>
+    </table>
+
+  </div>
+
+</body>
+</html>

@@ -335,6 +335,31 @@ INT begin_of_run(INT run_number, char *error)
   g_transfered=0;
   // start everything
 
+  //Check if LO are required and if so wait for them to be on
+  bool with_LO = false;
+  g_size = sizeof(int);
+  db_ret = db_get_value(hDB, 0, "/Experiment/Run Parameters/With_LO",&with_LO,&g_size,TID_BOOL,FALSE);
+  if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+  if(with_LO)
+  {
+    int Lo1=0;
+    int Lo2=0;
+    int Lo3=0;
+    g_size = sizeof(Lo1);
+    while(Lo1==0 || Lo2==0 || Lo3==0)
+    {
+      db_ret = db_get_value(hDB, 0, "/Equipment/LocalOscill/Variables/onoff RS",&Lo1,&g_size,TID_INT32,FALSE);
+      cout<<Lo1<<endl;
+      if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+      db_ret = db_get_value(hDB, 0, "/Equipment/LocalOscill/Variables/onoff Teled Ch1",&Lo2,&g_size,TID_INT32,FALSE);
+      cout<<Lo2<<endl;
+      if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+      db_ret = db_get_value(hDB, 0, "/Equipment/LocalOscill/Variables/onoff Teled Ch2",&Lo3,&g_size,TID_INT32,FALSE);
+      cout<<Lo3<<endl;
+      if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+    }
+  }
+
 	INT ret = StartAcq();
 
   return ret;

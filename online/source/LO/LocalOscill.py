@@ -9,6 +9,8 @@ import ColdLibraryv3 as coldlib
 from ColdLibraryv3 import modules
 import time
 
+writebank = False
+
 class MyLOEquipment(midas.frontend.EquipmentBase):
     """
     We define an "equipment" for each logically distinct task that this frontend
@@ -25,7 +27,7 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         # The name of our equipment. This name will be used on the midas status
         # page, and our info will appear in /Equipment/MyPeriodicEquipment in
         # the ODB.
-        equip_name = "LocalOscill"
+        self.equip_name = "LocalOscill"
         
         # Define the "common" settings of a frontend. These will appear in
         # /Equipment/MyPeriodicEquipment/Common. The values you set here are
@@ -42,7 +44,7 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         default_common.log_history = 0
 
         # You MUST call midas.frontend.EquipmentBase.__init__ in your equipment's __init__ method!
-        midas.frontend.EquipmentBase.__init__(self, client, equip_name, default_common)
+        midas.frontend.EquipmentBase.__init__(self, client, self.equip_name, default_common)
         
         #### apro comunicazione strumenti
         self.RShandler = coldlib.RS(modules["RS_SMA100B"])
@@ -91,17 +93,17 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         else:
             print('break') #mettere messaggio errore midas
         
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "freq RS"), freqRS)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "power RS"), powerRS)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "onoff RS"), onoffRS)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "freq Teled Ch1"), freqTeledCh1)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "Vpp Teled Ch1"), ampTeledCh1)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "onoff Teled Ch1"), onoffTeledCh1)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "freq Teled Ch2"), freqTeledCh2)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "Vpp Teled Ch2"), ampTeledCh2)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "onoff Teled Ch2"), onoffTeledCh2)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq RS"), freqRS)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power RS"), powerRS)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff RS"), onoffRS)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch1"), freqTeledCh1)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch1"), ampTeledCh1)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff Teled Ch1"), onoffTeledCh1)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch2"), freqTeledCh2)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch2"), ampTeledCh2)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff Teled Ch2"), onoffTeledCh2)
 
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "hasChanged"), hasChanged)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"), hasChanged)
         
         # You can set the status of the equipment (appears in the midas status page)
         self.set_status("LO Initialized")
@@ -114,22 +116,21 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         
         
     def readout_func(self):
-        
-        equip_name = "LocalOscill"
+    
 
-        hasChanged = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "hasChanged"))
+        hasChanged = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"))
 
         if hasChanged == True:
         
-            freqRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "freq RS"))
-            powerRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "power RS"))
-            onoffRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "onoff RS"))
-            freqTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "freq Teled Ch1"))
-            ampTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "Vpp Teled Ch1"))
-            onoffTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "onoff Teled Ch1"))
-            freqTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "freq Teled Ch2"))
-            ampTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "Vpp Teled Ch2"))
-            onoffTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "onoff Teled Ch2"))
+            freqRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq RS"))
+            powerRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power RS"))
+            onoffRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff RS"))
+            freqTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch1"))
+            ampTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch1"))
+            onoffTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff Teled Ch1"))
+            freqTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch2"))
+            ampTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch2"))
+            onoffTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff Teled Ch2"))
 
             if onoffTeledCh1 == 1:
                 strTeledCh1 : str = 'ON'
@@ -157,11 +158,28 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
             self.Teledyne.output(2,strTeledCh2)
 
             hasChanged = False
-            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "hasChanged"), hasChanged)
-
-        else: pass
-
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"), hasChanged)
         
+        global writebank
+
+        if writebank:
+            freqRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq RS"))
+            powerRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power RS"))
+            freqTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch1"))
+            ampTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch1"))
+            freqTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch2"))
+            ampTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch2"))
+
+            event = midas.event.Event()
+
+            datum = [freqRS,powerRS,freqTeledCh1,ampTeledCh1,freqTeledCh2,ampTeledCh2]
+            event.create_bank("LOSC",midas.TID_DOUBLE,datum)
+
+
+            writebank=False
+            self.set_status("Running")   
+            return event
+
         self.set_status("Running")   
         
         return None
@@ -186,21 +204,45 @@ class MyFrontend(midas.frontend.FrontendBase):
         #print(a._is_active_for_state(self.run_state))
 
         
-    #def begin_of_run(self, run_number):
-    #     """
-    #     This function will be called at the beginning of the run.
-    #     You don't have to define it, but you probably should.
-    #     You can access individual equipment classes through the `self.equipment`
-    #     dict if needed.
-    #     """
-    #     self.set_all_equipment_status("Running", "greenLight")
-    #     self.client.msg("Frontend has seen start of run number %d" % run_number)
-    #     return midas.status_codes["SUCCESS"]
+    def begin_of_run(self, run_number):
+        """
+        This function will be called at the beginning of the run.
+        You don't have to define it, but you probably should.
+        You can access individual equipment classes through the `self.equipment`
+        dict if needed.
+        """
+        self.set_all_equipment_status("Running", "greenLight")
+        self.client.msg("Frontend has seen start of run number %d" % run_number)
+
+        with_LO = self.client.odb_get("/Experiment/Run Parameters/{:}".format("With_LO"))
+
+        if with_LO:
+            self.equipment['LocalOscill'].RShandler.output(1)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equipment['LocalOscill'].equip_name, "onoff RS"), 1)
+            self.equipment['LocalOscill'].Teledyne.output(1,'ON')
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equipment['LocalOscill'].equip_name, "onoff Teled Ch1"), 1)
+            self.equipment['LocalOscill'].Teledyne.output(2,'ON')
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equipment['LocalOscill'].equip_name, "onoff Teled Ch2"), 1)
+
+        global writebank
+        writebank  = True
+
+        return midas.status_codes["SUCCESS"]
         
-    # def end_of_run(self, run_number):
-    #     self.set_all_equipment_status("Finished", "greenLight")
-    #     self.client.msg("Frontend has seen end of run number %d" % run_number)
-    #     return midas.status_codes["SUCCESS"]
+    def end_of_run(self, run_number):
+        self.set_all_equipment_status("Finished", "greenLight")
+        self.client.msg("Frontend has seen end of run number %d" % run_number)
+
+        with_LO = self.client.odb_get("/Experiment/Run Parameters/{:}".format("With_LO"))
+        if with_LO:
+            self.equipment['LocalOscill'].RShandler.output(0)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equipment['LocalOscill'].equip_name, "onoff RS"), 0)
+            self.equipment['LocalOscill'].Teledyne.output(1,'OFF')
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equipment['LocalOscill'].equip_name, "onoff Teled Ch1"), 0)
+            self.equipment['LocalOscill'].Teledyne.output(2,'OFF')
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equipment['LocalOscill'].equip_name, "onoff Teled Ch2"), 0)
+
+        return midas.status_codes["SUCCESS"]
     
     def frontend_exit(self):
         """

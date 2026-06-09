@@ -49,15 +49,21 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
         self.releController.write(0xff)
         #self.releController.close()
         self.tti = _AimTTi_PL_P.AimTTi("tti", "TCPIP::192.168.2.110::9221::SOCKET");
-        self.tti.ch1.volt.set(28.1)
+        self.tti.ch1.volt.set(28.0)
         voltage = self.tti.ch1.volt.get()
         chan1 = self.tti.ch1.channel
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "Voltage"), voltage)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "Voltage"), voltage) #tensione alimentatore
         
-        
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"), 0)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 0)
-        
+        ###switch CR1
+        #client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"), 0)
+        #client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_status"), 0)
+        ###switch CR2 e CR1
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_set"), 0)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_status"), 0)
+        ###switch RT1
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_set"), 0)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_status"), 0)
+
         # You can set the status of the equipment (appears in the midas status page)
         self.set_status("Relé Initialized")
         
@@ -65,32 +71,65 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
         
         
     #def poll_func(self):
-     #   print("sono qui")
-     #   self.set_status("Running")
-     #  
-     #   #d = gpio.GpioAsyncController()
-     #   #d.configure('ftdi://ftdi:232h:FT7UQ713/1',direction=0xff)
-     #   self.client.msg("Switch has been configured.")
-     #   #d.close()
      #   return False
         
         
     def readout_func(self):
         
         equip_name = "CryoSwitch"
-        cset = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"))
-        #cstatus = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"))
         chan1 = self.tti.ch1.channel
+        #cr1set = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"))
+        cr2set = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_set"))
+        rt1set = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_set"))
         
-        if cset == 0:
+
+        ######## switch CR1
+        # if cr1set == 0:
+        #     pass
+        
+        # elif cr1set==1:
+            
+        #     #0,1 ON
+        #     self.releController.write(252)
+        #     time.sleep(0.005)
+        #     #0,1, 3,4 ON
+        #     self.releController.write(228)
+        #     self.tti.write(f"OP{chan1} 1")
+        #     time.sleep(0.008)
+        #     print('Done.\n')
+        #     self.tti.write(f"OP{chan1} 0")
+        #     self.releController.write(0xff)
+           
+        #     self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_status"), 1)
+        #     self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"), 0) 
+        #     self.client.msg("Switch CR1 has been changed to C-1.")
+        
+        # elif cr1set==2:
+            
+        #     #3,4 ON
+        #     self.releController.write(231)
+        #     self.tti.write(f"OP{chan1} 1")
+        #     time.sleep(0.008)
+        #     print('Done.\n')
+        #     self.tti.write(f"OP{chan1} 0")
+        #     self.releController.write(0xff)
+            
+        #     self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_status"), 2)
+        #     self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"), 0) 
+        #     self.client.msg("Switch CR1 has been changed to C-2.")
+        
+
+        
+        ######## switch CR2 e CR1
+        if cr2set == 0:
             pass
         
-        
-        elif cset==1:
+        elif cr2set==1:
             
+            #2,5 ON
             self.releController.write(252)
             time.sleep(0.005)
-            #print('4 e 5 ON:\n')
+            #2,5, 3,4 ON
             self.releController.write(228)
             self.tti.write(f"OP{chan1} 1")
             time.sleep(0.008)
@@ -98,13 +137,13 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
             self.tti.write(f"OP{chan1} 0")
             self.releController.write(0xff)
            
-            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 1)
-            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"), 0) 
-            self.client.msg("Switch has been changed to C-1.")
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_status"), 1)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_set"), 0) 
+            self.client.msg("Cryo Switch has been changed to C-1.")
         
-        elif cset==2:
+        elif cr2set==2:
             
-            #4,5 ON
+            #3,4 ON
             self.releController.write(231)
             self.tti.write(f"OP{chan1} 1")
             time.sleep(0.008)
@@ -112,10 +151,48 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
             self.tti.write(f"OP{chan1} 0")
             self.releController.write(0xff)
             
-            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_status"), 2)
-            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "C_set"), 0) 
-            self.client.msg("Switch has been changed to C-2.")
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_status"), 2)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_set"), 0) 
+            self.client.msg("Cryo Switch has been changed to C-2.")
             
+            
+            
+        ######## switch RT1
+        if rt1set == 0:
+            pass
+        
+        elif rt1set==1:
+            
+            #6,7 ON
+            self.releController.write(63)
+            #time.sleep(0.005)
+            #6,7, 3,4 ON
+            #self.releController.write(39)
+            self.tti.write(f"OP{chan1} 1")
+            time.sleep(0.020)
+            print('Done.\n')
+            self.tti.write(f"OP{chan1} 0")
+            self.releController.write(0xff)
+           
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_status"), 1)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_set"), 0) 
+            self.client.msg("Switch RT1 has been changed to C-1.")
+        
+        elif rt1set==2:
+            
+            #3,4 ON
+            #self.releController.write(231)
+            self.tti.write(f"OP{chan1} 1")
+            time.sleep(0.020)
+            print('Done.\n')
+            self.tti.write(f"OP{chan1} 0")
+            self.releController.write(0xff)
+            
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_status"), 2)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_set"), 0) 
+            self.client.msg("Switch RT1 has been changed to C-2.")
+
+
         self.set_status("Running")   
         
         return None

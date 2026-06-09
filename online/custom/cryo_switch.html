@@ -38,9 +38,22 @@ window.onload = function() {
 
 }
   
+
 function moveTo(id){
 
-  var paths = ["/Equipment/CryoSwitch/Variables/C_set"];
+  var paths = ["/Equipment/CryoSwitch/Variables/CR_set"];
+
+  mjsonrpc_db_paste(paths,[id]).then(function(rpc) {
+  }).catch(function(error) {
+          mjsonrpc_error_alert(error);
+  });
+
+}
+
+
+function moveTo2(id){
+
+  var paths = ["/Equipment/CryoSwitch/Variables/RT1_set"];
 
   mjsonrpc_db_paste(paths,[id]).then(function(rpc) {
   }).catch(function(error) {
@@ -70,13 +83,17 @@ padding: 8px;
   <div id="mmain">
     <table class="mtable" style="font-size:18px">
       <tr>
-    	<th class="mtableheader" id="page_title" colspan="4">Cryogenic Switch<th/>
+    	<th class="mtableheader" id="page_title" colspan="4">Cryo Switch</th>
       </tr>
       <tr>
 	<td colspan="4" style="vertical-align:center">
 	  <table class="mtable" style="font-size:18px">
 	    <tr align="center">
-	      <td width="200">Current Position</td><td width="200" style="font-weight:bold;color:green"><div class="modbvalue" data-format="d" data-odb-path="/Equipment/CryoSwitch/Variables/C_status"></div></td>
+	      <td width="200">Current Position</td>
+        <td width="200" style="font-weight:bold;color:green">
+          <div class="modbvalue" data-format="d" data-odb-path="/Equipment/CryoSwitch/Variables/CR_status">
+          </div>
+        </td>
 	    </tr>
 	  </table>
 	</td>
@@ -87,6 +104,34 @@ padding: 8px;
 	
       </tr>
     </table>
+
+
+<!-- #### parte nuova #### !-->
+    <br>
+
+    <table class="mtable" style="font-size:18px">
+      <tr>
+        <th class="mtableheader" id="page_title_2" colspan="4">RT Switch</th>
+      </tr>
+      <tr>
+        <td colspan="4" style="vertical-align:center">
+          <table class="mtable" style="font-size:18px">
+            <tr align="center">
+              <td width="200">Current Position</td>
+              <td width="200" style="font-weight:bold;color:green">
+                <div class="modbvalue" data-format="d" data-odb-path="/Equipment/CryoSwitch/Variables/RT1_status"></div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td><input class="mbutton" id="btnP2" type="button" value="C-1" onclick="moveTo2(1)" style="padding: 7px 20px;font-size:18px;margin:5px"/></td>
+        <td><input class="mbutton" id="btnP3" type="button" value="C-2" onclick="moveTo2(2)" style="padding: 7px 20px;font-size:18px;margin:5px"/></td>
+      </tr>
+    </table>
+  <!-- #### fine parte nuova #### !-->
+
     
   </div>
 

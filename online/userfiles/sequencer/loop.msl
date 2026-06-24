@@ -1,9 +1,11 @@
 COMMENT 5 runs of 500 events each (delta method)
 
 # Set the auto-stop limit (this part you already know works)
-PARAM nruns, "Number of runs", 3
-PARAM nev,   "Events per run", 500
-RUNDESCRIPTION "test sequenza 10 run 500 ev"
+PARAM nruns, "Number of runs", 15
+PARAM nev,   "Events per run", 850
+RUNDESCRIPTION "test sequenza 15 run 850 ev"
+ODBSET "/Logger/Write data", 1
+ODBSET "/Experiment/Run Parameters/With_LO", 1
 
 ODBSET "/Equipment/Netbox/Common/Event limit", $nev
 

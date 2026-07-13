@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html class="mcss" lang="en">
+
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="midas.css">
+<script src="controls.js"></script>
+<script src="midas.js"></script>
+<script src="mhttpd.js"></script>
+<script src="mhistory.js"></script>
+
+<style>
+
+.mydiv {
+  cursor: pointer;
+  color:#0000FF;
+}
+
+.mydiv:link { color:#0000FF; text-decoration:none }
+.mydiv:visited { color:#800080; text-decoration:none }
+.mydiv:hover { color:#0000FF; text-decoration:underline }
+.mydiv:active { color:#0000FF; text-decoration:underline }
+.mydiv:focus { color:#0000FF; text-decoration:none; }
+
+input[type=number] {
+  font-size: 100%;
+  width: 140px;
+  padding: 5px;
+}
+
+input[type=number][disabled] {
+  color:transparent;
+  background-color:transparent;
+  border-width: 0px;
+}
+
+.mtable td {
+  padding: 8px;
+}
+
+.vnaBox {
+  font-size:18px;
+  margin-bottom:25px;
+}
+
+.saBox {
+  font-size:18px;
+  margin-bottom:25px;
+}
+
+.setcell {
+  white-space: nowrap;
+}
+
+select {
+  font-size: 100%;
+  width: 155px;
+  padding: 5px;
+}
+
+</style>
+
+
+<script>
+
+const VNA_BASE = "/Equipment/VNA/Variables/";
+const SA_BASE  = "/Equipment/SA/Variables/";
+
+/* =========================
+   VNA paths
+   ========================= */
+
+const SCATTER_PATH = VNA_BASE + "Scatter";
+const FORMAT_PATH  = VNA_BASE + "Format";
+const NPOINTS_PATH = VNA_BASE + "Npoints";
+const IFBW_PATH    = VNA_BASE + "IFBW_Hz";
+const CENTER_PATH  = VNA_BASE + "Center_Hz";
+const SPAN_PATH    = VNA_BASE + "Span_Hz";
+const POWER_PATH   = VNA_BASE + "Power_dBm";
+
+const HAS_CHANGED_PATH  = VNA_BASE + "hasChanged";
+const CALIB_STATE_PATH  = VNA_BASE + "Calib_state";
+const START_CALIB_PATH  = VNA_BASE + "Start_Calib";
+
+/* =========================
+   Spectrum Analyzer paths
+   ========================= */
+
+const SA_CENTER_PATH      = SA_BASE + "Center_Hz";
+const SA_SPAN_PATH        = SA_BASE + "Span_Hz";
+const SA_NPOINTS_PATH     = SA_BASE + "Npoints";
+const SA_RBW_PATH         = SA_BASE + "RBW_Hz";
+const SA_VBW_PATH         = SA_BASE + "VBW_Hz";
+const SA_REF_LEVEL_PATH   = SA_BASE + "Ref_level";
+const SA_INPUT_ATTEN_PATH = SA_BASE + "Input_Atten";
+const SA_NAVG_PATH        = SA_BASE + "Navg";
+const SA_DETECTOR_PATH    = SA_BASE + "Detector_type";
+
+const SA_HAS_CHANGED_PATH = SA_BASE + "hasChanged";
+const SA_CALIB_STATE_PATH = SA_BASE + "Calib_state";
+
+
+window.onload = function() {
+
+  mhttpd_init("Calibration");
+
+  readVnaValues();
+  readSaValues();
+
+  window.setInterval(function() {
+    readVnaValues();
+    readSaValues();
+  }, 1000);
+
+};
+
+
+/* =========================
+   Generic write function
+   ========================= */
+
+function writeParameter(path, value, hasChangedPath, readbackFunction) {
+
+  mjsonrpc_db_paste(
+    [path, hasChangedPath],
+    [value, true]
+  ).then(function() {
+
+    readbackFunction();
+
+  }).catch(function(error) {
+
+    console.error(error);
+    mjsonrpc_error_alert(error);
+
+  });
+
+}
+
+
+/* =========================
+   VNA functions
+   ========================= */
+
+function readVnaValues() {
+
+  let paths = [
+    SCATTER_PATH,
+    FORMAT_PATH,
+    NPOINTS_PATH,
+    IFBW_PATH,
+    CENTER_PATH,
+    SPAN_PATH,
+    POWER_PATH
+  ];
+
+  mjsonrpc_db_get_values(paths).then(function(rpc) {
+
+    let data = rpc.result.data;
+
+    let scatter = data[0];
+    let format  = data[1];
+    let npoints = data[2];
+    let ifbw    = data[3];
+    let center  = Number(data[4]);   // Hz
+    let span    = Number(data[5]);   // Hz
+    let power   = Number(data[6]);   // dBm
+
+    document.getElementById("scatterParameterDisplay").innerText = scatter;
+    document.getElementById("formatDisplay").innerText = format;
+    document.getElementById("npointsDisplay").innerText = npoints;
+    document.getElementById("ifbwDisplay").innerText = ifbw;
+
+    document.getElementById("centerFreqDisplay").innerText =
+      (center / 1e9).toFixed(6);
+
+    document.getElementById("spanDisplay").innerText =
+      (span / 1e6).toFixed(3);
+
+    document.getElementById("powerDisplay").innerText =
+      power.toFixed(2);
+
+  }).catch(function(error) {
+
+    console.error(error);
+    mjsonrpc_error_alert(error);
+
+  });
+
+}
+
+
+function startVnaSweepOnly() {
+
+  mjsonrpc_db_paste(
+    [HAS_CHANGED_PATH, START_CALIB_PATH],
+    [true, true]
+  ).then(function() {
+
+    console.log("VNA sweep started");
+
+  }).catch(function(error) {
+
+    console.error(error);
+    mjsonrpc_error_alert(error);
+
+  });
+
+}
+
+
+function startCalibration(calibState) {
+
+  let paths = [
+    HAS_CHANGED_PATH,
+    CALIB_STATE_PATH,
+    START_CALIB_PATH
+  ];
+
+  let values = [
+    true,
+    calibState,
+    true
+  ];
+
+  mjsonrpc_db_paste(paths, values).then(function() {
+
+    console.log("VNA calibration started: " + calibState);
+
+  }).catch(function(error) {
+
+    console.error(error);
+    mjsonrpc_error_alert(error);
+
+  });
+
+}
+
+
+/* =========================
+   Spectrum Analyzer functions
+   ========================= */
+
+function readSaValues() {
+
+  let paths = [
+    SA_CENTER_PATH,
+    SA_SPAN_PATH,
+    SA_NPOINTS_PATH,
+    SA_RBW_PATH,
+    SA_VBW_PATH,
+    SA_REF_LEVEL_PATH,
+    SA_INPUT_ATTEN_PATH,
+    SA_NAVG_PATH,
+    SA_DETECTOR_PATH
+  ];
+
+  mjsonrpc_db_get_values(paths).then(function(rpc) {
+
+    let data = rpc.result.data;
+
+    let center      = Number(data[0]);  // Hz
+    let span        = Number(data[1]);  // Hz
+    let npoints     = data[2];
+    let rbw         = data[3];
+    let vbw         = data[4];
+    let refLevel    = Number(data[5]);
+    let inputAtten  = Number(data[6]);
+    let navg        = data[7];
+    let detector    = data[8];
+
+    document.getElementById("saCenterDisplay").innerText =
+      (center / 1e9).toFixed(6);
+
+    document.getElementById("saSpanDisplay").innerText =
+      (span / 1e6).toFixed(3);
+
+    document.getElementById("saNpointsDisplay").innerText = npoints;
+    document.getElementById("saRbwDisplay").innerText = rbw;
+    document.getElementById("saVbwDisplay").innerText = vbw;
+
+    document.getElementById("saRefLevelDisplay").innerText =
+      refLevel.toFixed(2);
+
+    document.getElementById("saInputAttenDisplay").innerText =
+      inputAtten.toFixed(2);
+
+    document.getElementById("saNavgDisplay").innerText = navg;
+    document.getElementById("saDetectorDisplay").innerText = detector;
+
+  }).catch(function(error) {
+
+    console.error(error);
+    mjsonrpc_error_alert(error);
+
+  });
+
+}
+
+
+function startSaSweepOnly() {
+
+  mjsonrpc_db_paste(
+    [SA_HAS_CHANGED_PATH, SA_CALIB_STATE_PATH],
+    [true, "sweep"]
+  ).then(function() {
+
+    console.log("Spectrum Analyzer sweep started");
+
+  }).catch(function(error) {
+
+    console.error(error);
+    mjsonrpc_error_alert(error);
+
+  });
+
+}
+
+
+function saveSaCalibration() {
+
+  mjsonrpc_db_paste(
+    [SA_HAS_CHANGED_PATH, SA_CALIB_STATE_PATH],
+    [true, "save"]
+  ).then(function() {
+
+    console.log("Spectrum Analyzer calibration saved");
+
+  }).catch(function(error) {
+
+    console.error(error);
+    mjsonrpc_error_alert(error);
+
+  });
+
+}
+
+</script>
+
+
+<title>Calibration</title>
+
+</head>
+
+<body class="mcss">
+
+<div id="mheader"></div>
+<div id="msidenav"></div>
+
+<div id="mmain">
+
+<!-- =========================
+     VNA box
+     ========================= -->
+
+<table class="mtable vnaBox">
+
+<tr>
+  <th class="mtableheader" colspan="5">VNA</th>
+</tr>
+
+<tr align="center">
+  <th width="220">Parameter</th>
+  <th width="220">Current value</th>
+  <th width="220">Set value</th>
+  <th width="120">Command</th>
+  <th width="180">Calibrate</th>
+</tr>
+
+<tr align="center">
+
+  <td>Scatter Parameter</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="scatterParameterDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <select id="scatterParameterSetValue">
+      <option value="">Select</option>
+      <option value="S11">S11</option>
+      <option value="S21">S21</option>
+      <option value="S12">S12</option>
+      <option value="S22">S22</option>
+    </select>
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SCATTER_PATH,
+             document.getElementById('scatterParameterSetValue').value,
+             HAS_CHANGED_PATH,
+             readVnaValues)">
+  </td>
+
+  <td rowspan="8" style="vertical-align:middle">
+
+    <input class="mbutton"
+           id="btnCalibrateS51"
+           type="button"
+           value="S51"
+           onclick="startCalibration('S51')"
+           style="padding:7px 20px;font-size:18px;margin:8px"><br>
+
+    <input class="mbutton"
+           id="btnCalibrateS53"
+           type="button"
+           value="S53"
+           onclick="startCalibration('S53')"
+           style="padding:7px 20px;font-size:18px;margin:8px"><br>
+
+    <input class="mbutton"
+           id="btnCalibrateS31"
+           type="button"
+           value="S31"
+           onclick="startCalibration('S31')"
+           style="padding:7px 20px;font-size:18px;margin:8px"><br>
+
+    <input class="mbutton"
+           id="btnCalibrateS33"
+           type="button"
+           value="S33"
+           onclick="startCalibration('S33')"
+           style="padding:7px 20px;font-size:18px;margin:8px">
+
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Format</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="formatDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <select id="formatSetValue">
+      <option value="">Select</option>
+      <option value="MLOG">MLOG</option>
+      <option value="MLIN">MLIN</option>
+      <option value="POL">POL</option>
+      <option value="PHAS">PHAS</option>
+      <option value="REAL">REAL</option>
+      <option value="IMAG">IMAG</option>
+      <option value="SMIT">SMIT</option>
+    </select>
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             FORMAT_PATH,
+             document.getElementById('formatSetValue').value,
+             HAS_CHANGED_PATH,
+             readVnaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Npoints</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="npointsDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="npointsSetValue"
+           type="number"
+           min="1"
+           step="1"
+           placeholder="2001">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             NPOINTS_PATH,
+             Number(document.getElementById('npointsSetValue').value),
+             HAS_CHANGED_PATH,
+             readVnaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>IFBW (Hz)</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="ifbwDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="ifbwSetValue"
+           type="number"
+           min="1"
+           max="100000"
+           step="1"
+           placeholder="[Hz]">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             IFBW_PATH,
+             Number(document.getElementById('ifbwSetValue').value),
+             HAS_CHANGED_PATH,
+             readVnaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Center (GHz)</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="centerFreqDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="centerFreqSetValue"
+           type="number"
+           step="0.00001"
+           placeholder="[GHz]">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             CENTER_PATH,
+             Number(document.getElementById('centerFreqSetValue').value) * 1e9,
+             HAS_CHANGED_PATH,
+             readVnaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Span (MHz)</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="spanDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="spanSetValue"
+           type="number"
+           step="0.01"
+           placeholder="[MHz]">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SPAN_PATH,
+             Number(document.getElementById('spanSetValue').value) * 1e6,
+             HAS_CHANGED_PATH,
+             readVnaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Power (dBm)</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="powerDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="powerSetValue"
+           type="number"
+           step="0.01"
+           placeholder="[dBm]">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             POWER_PATH,
+             Number(document.getElementById('powerSetValue').value),
+             HAS_CHANGED_PATH,
+             readVnaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td colspan="4">
+    <input class="mbutton"
+           id="btnStartVnaSweepOnly"
+           type="button"
+           value="Start Sweep Only"
+           onclick="startVnaSweepOnly()"
+           style="padding:7px 30px;font-size:18px;margin:10px">
+  </td>
+
+</tr>
+
+</table>
+
+
+<!-- =========================
+     Spectrum Analyzer box
+     ========================= -->
+
+<table class="mtable saBox">
+
+<tr>
+  <th class="mtableheader" colspan="5">Spectrum Analyzer</th>
+</tr>
+
+<tr align="center">
+  <th width="220">Parameter</th>
+  <th width="220">Current value</th>
+  <th width="220">Set value</th>
+  <th width="120">Command</th>
+  <th width="180">Calibrate</th>
+</tr>
+
+<tr align="center">
+
+  <td>Center (GHz)</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="saCenterDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="saCenterSetValue"
+           type="number"
+           step="0.00001"
+           placeholder="[GHz]">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SA_CENTER_PATH,
+             Number(document.getElementById('saCenterSetValue').value) * 1e9,
+             SA_HAS_CHANGED_PATH,
+             readSaValues)">
+  </td>
+
+  <td rowspan="10" style="vertical-align:middle">
+    <input class="mbutton"
+           id="btnSaSaveCalib"
+           type="button"
+           value="Save Calib"
+           onclick="saveSaCalibration()"
+           style="padding:7px 20px;font-size:18px;margin:8px">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Span (MHz)</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="saSpanDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="saSpanSetValue"
+           type="number"
+           step="0.01"
+           placeholder="[MHz]">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SA_SPAN_PATH,
+             Number(document.getElementById('saSpanSetValue').value) * 1e6,
+             SA_HAS_CHANGED_PATH,
+             readSaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Npoints</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="saNpointsDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="saNpointsSetValue"
+           type="number"
+           min="1"
+           step="1"
+           placeholder="2001">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SA_NPOINTS_PATH,
+             Number(document.getElementById('saNpointsSetValue').value),
+             SA_HAS_CHANGED_PATH,
+             readSaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>RBW (Hz)</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="saRbwDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="saRbwSetValue"
+           type="number"
+           min="1"
+           step="1"
+           placeholder="[Hz]">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SA_RBW_PATH,
+             Number(document.getElementById('saRbwSetValue').value),
+             SA_HAS_CHANGED_PATH,
+             readSaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>VBW (Hz)</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="saVbwDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="saVbwSetValue"
+           type="number"
+           min="1"
+           step="1"
+           placeholder="[Hz]">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SA_VBW_PATH,
+             Number(document.getElementById('saVbwSetValue').value),
+             SA_HAS_CHANGED_PATH,
+             readSaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Ref level (dB)</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="saRefLevelDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="saRefLevelSetValue"
+           type="number"
+           step="0.01"
+           placeholder="[dB]">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SA_REF_LEVEL_PATH,
+             Number(document.getElementById('saRefLevelSetValue').value),
+             SA_HAS_CHANGED_PATH,
+             readSaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Input Atten. (dB)</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="saInputAttenDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="saInputAttenSetValue"
+           type="number"
+           step="0.01"
+           placeholder="[dB]">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SA_INPUT_ATTEN_PATH,
+             Number(document.getElementById('saInputAttenSetValue').value),
+             SA_HAS_CHANGED_PATH,
+             readSaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Navg</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="saNavgDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <input id="saNavgSetValue"
+           type="number"
+           min="1"
+           step="1"
+           placeholder="1">
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SA_NAVG_PATH,
+             Number(document.getElementById('saNavgSetValue').value),
+             SA_HAS_CHANGED_PATH,
+             readSaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td>Detector type</td>
+
+  <td style="font-weight:bold;color:green">
+    <span id="saDetectorDisplay">---</span>
+  </td>
+
+  <td class="setcell">
+    <select id="saDetectorSetValue">
+      <option value="">Select</option>
+      <option value="APE">APE</option>
+      <option value="NEG">NEG</option>
+      <option value="POS">POS</option>
+      <option value="SAMP">SAMP</option>
+      <option value="RMS">RMS</option>
+      <option value="AVER">AVER</option>
+      <option value="QPE">QPE</option>
+    </select>
+  </td>
+
+  <td>
+    <input class="mbutton"
+           type="button"
+           value="Set"
+           onclick="writeParameter(
+             SA_DETECTOR_PATH,
+             document.getElementById('saDetectorSetValue').value,
+             SA_HAS_CHANGED_PATH,
+             readSaValues)">
+  </td>
+
+</tr>
+
+<tr align="center">
+
+  <td colspan="4">
+    <input class="mbutton"
+           id="btnStartSaSweepOnly"
+           type="button"
+           value="Start Sweep Only"
+           onclick="startSaSweepOnly()"
+           style="padding:7px 30px;font-size:18px;margin:10px">
+  </td>
+
+</tr>
+
+</table>
+
+</div>
+
+</body>
+</html>

@@ -49,16 +49,24 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         #### apro comunicazione strumenti
         self.RShandler = coldlib.RS(modules["RS_SMA100B"])
         self.Teledyne = coldlib.Teledyne(modules["T3AFG500"])
+        self.KSpump = coldlib.KS(modules["Keysight_EXG"])
 
         #### leggo i parametri dagli strumenti
         powerRS = float(self.RShandler.power())
         freqRS = float(self.RShandler.freq())
         onoffRS = int(self.RShandler.output())
+        roscRS = str(self.RShandler.phase_ref())
         parTeledCh1 = self.Teledyne.inst.query('C1:BSWV?')
         parTeledCh2 = self.Teledyne.inst.query('C2:BSWV?')
         stateTeledCh1 = self.Teledyne.inst.query('C1:OUTP?')
         stateTeledCh2 = self.Teledyne.inst.query('C2:OUTP?')
+        roscTeled = self.Teledyne.inst.query('ROSC?')
         
+        powerKS = float(self.KSpump.power())
+        freqKS = float(self.KSpump.freq())
+        onoffKS = int(self.KSpump.output())
+        roscKS = str(self.KSpump.phase_ref())
+
         #variabile si/no se è stato cambiato qualche parametro. False = NO, True = YES
         hasChanged : bool = False
 
@@ -79,6 +87,10 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         match2 = re.search(r'OUTP (.*?),LOAD',stateTeledCh2)
         strTeledCh2 = match2.group(1)
 
+        match = re.search(r'ROSC (.*?),',roscTeled)
+        roscTeled = match.group(1)
+
+
         if strTeledCh1 == 'OFF':
             onoffTeledCh1 : int = 0
         elif strTeledCh1 == 'ON':
@@ -95,6 +107,7 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq RS"), freqRS)
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power RS"), powerRS)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Ref Oscill RS"), roscRS)
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff RS"), onoffRS)
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch1"), freqTeledCh1)
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch1"), ampTeledCh1)
@@ -102,13 +115,17 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch2"), freqTeledCh2)
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch2"), ampTeledCh2)
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff Teled Ch2"), onoffTeledCh2)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Ref Oscill Teled"), roscTeled)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Pump"), freqKS)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power Pump"), powerKS)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Ref Oscill Pump"), roscKS)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff Pump"), onoffKS)
 
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"), hasChanged)
+        client.odb_set("/Equipment/{:}/daqCalibration/{:}".format(self.equip_name, "Calib"), False)
         
         # You can set the status of the equipment (appears in the midas status page)
         self.set_status("LO Initialized")
-        
-        
         
         
     #def poll_func(self):
@@ -119,11 +136,13 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
     
 
         hasChanged = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"))
+        Calib = self.client.odb_get("/Equipment/{:}/daqCalibration/{:}".format(self.equip_name, "Calib"))
 
         if hasChanged == True:
         
             freqRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq RS"))
             powerRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power RS"))
+            roscRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Ref Oscill RS"))
             onoffRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff RS"))
             freqTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch1"))
             ampTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch1"))
@@ -131,6 +150,11 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
             freqTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch2"))
             ampTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch2"))
             onoffTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff Teled Ch2"))
+            roscTeled = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Ref Oscill Teled"))
+            freqKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Pump"))
+            powerKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power Pump"))
+            roscKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Ref Oscill Pump"))
+            onoffKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff Pump"))
 
             if onoffTeledCh1 == 1:
                 strTeledCh1 : str = 'ON'
@@ -149,6 +173,7 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
             #### set dei parametri sugli strumenti
             self.RShandler.power(powerRS)
             self.RShandler.freq(freqRS)
+            self.RShandler.phase_ref(roscRS)
             self.RShandler.output(onoffRS)
             self.Teledyne.amp(1,ampTeledCh1)
             self.Teledyne.freq(1,freqTeledCh1)
@@ -156,9 +181,29 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
             self.Teledyne.amp(2,ampTeledCh2)
             self.Teledyne.freq(2,freqTeledCh2)
             self.Teledyne.output(2,strTeledCh2)
+            self.Teledyne.ref(roscTeled)
+            self.KSpump.power(powerKS)
+            self.KSpump.freq(freqKS)
+            self.KSpump.phase_ref(roscKS)
+            self.KSpump.output(onoffKS)
+
+            self.Teledyne.ref_out('ON')
 
             hasChanged = False
             self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"), hasChanged)
+
+
+        if Calib == True:
+            f_start = self.client.odb_get("/Equipment/{:}/daqCalibration/{:}".format(self.equip_name, "f_start"))
+            f_stop = self.client.odb_get("/Equipment/{:}/daqCalibration/{:}".format(self.equip_name, "f_stop"))
+            N = self.client.odb_get("/Equipment/{:}/daqCalibration/{:}".format(self.equip_name, "N_steps"))
+            freqs = np.linspace(f_start, f_stop, N+1)
+            self.client.odb_set("/Equipment/{:}/daqCalibration/{:}".format(self.equip_name, "freqs"), freqs)
+
+            val = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Pump"))
+            self.KSpump.freq(val)
+            #self.client.odb_set("/Equipment/{:}/daqCalibration/{:}".format(self.equip_name, "Calib"), False)
+
         
         global writebank
 
@@ -169,10 +214,12 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
             ampTeledCh1 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch1"))
             freqTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Teled Ch2"))
             ampTeledCh2 = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Vpp Teled Ch2"))
+            freqKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Pump"))
+            powerKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power Pump"))
 
             event = midas.event.Event()
 
-            datum = [freqRS,powerRS,freqTeledCh1,ampTeledCh1,freqTeledCh2,ampTeledCh2]
+            datum = [freqRS,powerRS,freqTeledCh1,ampTeledCh1,freqTeledCh2,ampTeledCh2,freqKS,powerKS]
             event.create_bank("LOSC",midas.TID_DOUBLE,datum)
 
 
@@ -200,8 +247,6 @@ class MyFrontend(midas.frontend.FrontendBase):
         # it in __init__() seems logical.
         self.add_equipment(MyLOEquipment(self.client))
         
-        #a = self._enabled_equipment()[0]
-        #print(a._is_active_for_state(self.run_state))
 
         
     def begin_of_run(self, run_number):
@@ -251,6 +296,7 @@ class MyFrontend(midas.frontend.FrontendBase):
         """
         self.equipment['LocalOscill'].RShandler.close()
         self.equipment['LocalOscill'].Teledyne.close()
+        self.equipment['LocalOscill'].KSpump.close()
         self.equipment['LocalOscill'].set_status("Stopped")
         print("Goodbye from user code!")
         

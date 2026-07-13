@@ -20,7 +20,16 @@
 .mydiv:active { color:#0000FF; text-decoration:underline }
 .mydiv:focus { color:#0000FF; text-decoration:none; }
 
-input[type=number] {
+input[type=number],
+input[type=text] {
+  font-size: 100%;
+  width: 140px;
+  padding: 5px;
+}
+
+input[type=number],
+input[type=text],
+select {
   font-size: 100%;
   width: 140px;
   padding: 5px;
@@ -122,6 +131,7 @@ input[type=number][disabled]{
 /*
   Important:
   - Frequency and amplitude values written by this page should use FLOAT or DOUBLE ODB keys.
+  - Ref Oscill / ROSC values are strings.
   - ON/OFF values are binary states and are written as integers: 0 = OFF, 1 = ON.
 
   If an existing ODB key has the wrong type, mjsonrpc_db_paste() will not change
@@ -132,6 +142,12 @@ input[type=number][disabled]{
 const RS_LO_FREQ_PATH      = "/Equipment/LocalOscill/Variables/freq RS";
 const RS_LO_POWER_PATH     = "/Equipment/LocalOscill/Variables/power RS";
 const RS_LO_OUTPUT_PATH    = "/Equipment/LocalOscill/Variables/onoff RS";
+const RS_LO_ROSC_PATH      = "/Equipment/LocalOscill/Variables/Ref Oscill RS";
+
+const PUMP_FREQ_PATH       = "/Equipment/LocalOscill/Variables/freq Pump";
+const PUMP_POWER_PATH      = "/Equipment/LocalOscill/Variables/power Pump";
+const PUMP_OUTPUT_PATH     = "/Equipment/LocalOscill/Variables/onoff Pump";
+const PUMP_ROSC_PATH       = "/Equipment/LocalOscill/Variables/Ref Oscill Pump";
 
 const TELEDYNE_CH1_FREQ_PATH = "/Equipment/LocalOscill/Variables/freq Teled Ch1";
 const TELEDYNE_CH1_VPP_PATH  = "/Equipment/LocalOscill/Variables/Vpp Teled Ch1";
@@ -140,6 +156,7 @@ const TELEDYNE_CH1_OUTPUT_PATH = "/Equipment/LocalOscill/Variables/onoff Teled C
 const TELEDYNE_CH2_FREQ_PATH = "/Equipment/LocalOscill/Variables/freq Teled Ch2";
 const TELEDYNE_CH2_VPP_PATH  = "/Equipment/LocalOscill/Variables/Vpp Teled Ch2";
 const TELEDYNE_CH2_OUTPUT_PATH = "/Equipment/LocalOscill/Variables/onoff Teled Ch2";
+const TELEDYNE_ROSC_PATH     = "/Equipment/LocalOscill/Variables/Ref Oscill Teled";
 
 /*
   Global user-command flag.
@@ -189,6 +206,30 @@ function extractNumericValue(odbValue) {
   return NaN;
 }
 
+
+
+function extractStringValue(odbValue) {
+  /*
+    Ref Oscill / ROSC parameters are ODB strings.
+    Keep the value exactly as text, only removing leading/trailing spaces.
+  */
+
+  if (odbValue === null || odbValue === undefined) {
+    return "";
+  }
+
+  return String(odbValue).trim();
+}
+
+function didRequestedStringChange(odbPath, requestedText) {
+  var previousText = currentOdbValues[odbPath];
+
+  if (previousText === null || previousText === undefined) {
+    return true;
+  }
+
+  return String(previousText).trim() !== String(requestedText).trim();
+}
 
 function extractBooleanValue(odbValue) {
   if (typeof odbValue === "boolean") {
@@ -288,12 +329,18 @@ function readAllOdbValues() {
     RS_LO_FREQ_PATH,
     RS_LO_POWER_PATH,
     RS_LO_OUTPUT_PATH,
+    RS_LO_ROSC_PATH,
+    PUMP_FREQ_PATH,
+    PUMP_POWER_PATH,
+    PUMP_OUTPUT_PATH,
+    PUMP_ROSC_PATH,
     TELEDYNE_CH1_FREQ_PATH,
     TELEDYNE_CH1_VPP_PATH,
     TELEDYNE_CH1_OUTPUT_PATH,
     TELEDYNE_CH2_FREQ_PATH,
     TELEDYNE_CH2_VPP_PATH,
     TELEDYNE_CH2_OUTPUT_PATH,
+    TELEDYNE_ROSC_PATH,
     USER_COMMAND_CHANGED_PATH
   ];
 
@@ -305,42 +352,71 @@ function readAllOdbValues() {
     }
 
     var data = rpc.result.data;
-    var status = rpc.result.status || [];
 
-    var rsFreqHz  = extractNumericValue(data[0]);
-    var rsPower   = extractNumericValue(data[1]);
-    var rsOutput  = extractNumericValue(data[2]);
-    var ch1FreqHz = extractNumericValue(data[3]);
-    var ch1Vpp    = extractNumericValue(data[4]);
-    var ch1Output = extractNumericValue(data[5]);
-    var ch2FreqHz = extractNumericValue(data[6]);
-    var ch2Vpp    = extractNumericValue(data[7]);
-    var ch2Output = extractNumericValue(data[8]);
-    var userCommandChanged = extractBooleanValue(data[9]);
+    var rsFreqHz   = extractNumericValue(data[0]);
+    var rsPower    = extractNumericValue(data[1]);
+    var rsOutput   = extractNumericValue(data[2]);
+    var rsRosc     = extractStringValue(data[3]);
+
+    var pumpFreqHz = extractNumericValue(data[4]);
+    var pumpPower  = extractNumericValue(data[5]);
+    var pumpOutput = extractNumericValue(data[6]);
+    var pumpRosc   = extractStringValue(data[7]);
+
+    var ch1FreqHz  = extractNumericValue(data[8]);
+    var ch1Vpp     = extractNumericValue(data[9]);
+    var ch1Output  = extractNumericValue(data[10]);
+
+    var ch2FreqHz  = extractNumericValue(data[11]);
+    var ch2Vpp     = extractNumericValue(data[12]);
+    var ch2Output  = extractNumericValue(data[13]);
+    var teledRosc  = extractStringValue(data[14]);
+
+    var userCommandChanged = extractBooleanValue(data[15]);
 
     currentOdbValues[RS_LO_FREQ_PATH] = rsFreqHz;
     currentOdbValues[RS_LO_POWER_PATH] = rsPower;
     currentOdbValues[RS_LO_OUTPUT_PATH] = rsOutput;
+    currentOdbValues[RS_LO_ROSC_PATH] = rsRosc;
+
+    currentOdbValues[PUMP_FREQ_PATH] = pumpFreqHz;
+    currentOdbValues[PUMP_POWER_PATH] = pumpPower;
+    currentOdbValues[PUMP_OUTPUT_PATH] = pumpOutput;
+    currentOdbValues[PUMP_ROSC_PATH] = pumpRosc;
+
     currentOdbValues[TELEDYNE_CH1_FREQ_PATH] = ch1FreqHz;
     currentOdbValues[TELEDYNE_CH1_VPP_PATH] = ch1Vpp;
     currentOdbValues[TELEDYNE_CH1_OUTPUT_PATH] = ch1Output;
+
     currentOdbValues[TELEDYNE_CH2_FREQ_PATH] = ch2FreqHz;
     currentOdbValues[TELEDYNE_CH2_VPP_PATH] = ch2Vpp;
     currentOdbValues[TELEDYNE_CH2_OUTPUT_PATH] = ch2Output;
+    currentOdbValues[TELEDYNE_ROSC_PATH] = teledRosc;
+
     currentOdbValues[USER_COMMAND_CHANGED_PATH] = userCommandChanged;
 
-    document.getElementById("rsLoFreqGHzDisplay").innerText        = formatNumber(rsFreqHz / 1e9, 9);
-    document.getElementById("rsLoPowerDisplay").innerText          = formatNumber(rsPower, 6);
+    document.getElementById("rsLoFreqGHzDisplay").innerText = formatNumber(rsFreqHz / 1e9, 9);
+    document.getElementById("rsLoPowerDisplay").innerText = formatNumber(rsPower, 6);
+    document.getElementById("rsLoRoscDisplay").innerText = rsRosc || "---";
     updateOutputIndicator("rsLoOutputDisplay", rsOutput);
+
+    document.getElementById("pumpFreqGHzDisplay").innerText = formatNumber(pumpFreqHz / 1e9, 9);
+    document.getElementById("pumpPowerDisplay").innerText = formatNumber(pumpPower, 6);
+    document.getElementById("pumpRoscDisplay").innerText = pumpRosc || "---";
+    updateOutputIndicator("pumpOutputDisplay", pumpOutput);
+
     document.getElementById("teledyneCh1FreqMHzDisplay").innerText = formatNumber(ch1FreqHz / 1e6, 6);
-    document.getElementById("teledyneCh1VppDisplay").innerText     = formatNumber(ch1Vpp, 6);
+    document.getElementById("teledyneCh1VppDisplay").innerText = formatNumber(ch1Vpp, 6);
+    document.getElementById("teledyneCh1RoscDisplay").innerText = teledRosc || "---";
     updateOutputIndicator("teledyneCh1OutputDisplay", ch1Output);
+
     document.getElementById("teledyneCh2FreqMHzDisplay").innerText = formatNumber(ch2FreqHz / 1e6, 6);
-    document.getElementById("teledyneCh2VppDisplay").innerText     = formatNumber(ch2Vpp, 6);
+    document.getElementById("teledyneCh2VppDisplay").innerText = formatNumber(ch2Vpp, 6);
     updateOutputIndicator("teledyneCh2OutputDisplay", ch2Output);
+
     updateChangeFlagIndicator("hasChangedDisplay", userCommandChanged);
 
-    document.getElementById("readStatus").innerText = "Readback updated. Status: " + status;
+    document.getElementById("readStatus").innerText = "Readback OK.";
 
   }).catch(function(error) {
     document.getElementById("readStatus").innerText = "Readback error.";
@@ -482,6 +558,68 @@ function writeOdbInt(odbPath, valueNumber, parameterName) {
 
 }
 
+
+function writeOdbString(odbPath, valueText, parameterName) {
+
+  if (valueText === null || valueText === undefined) {
+    alert("Invalid string value for " + parameterName + ".");
+    return;
+  }
+
+  var stringValue = String(valueText).trim();
+
+  if (stringValue === "") {
+    alert("Please enter a value for " + parameterName + ".");
+    return;
+  }
+
+  mjsonrpc_db_paste([odbPath], [stringValue]).then(function(rpc) {
+
+    console.log("ODB string write", {
+      parameter: parameterName,
+      path: odbPath,
+      value: stringValue,
+      rpc: rpc
+    });
+
+    if (rpc && rpc.result && rpc.result.status) {
+      var status = rpc.result.status;
+      var firstStatus = Array.isArray(status) ? status[0] : status;
+
+      if (firstStatus !== 1) {
+        alert("ODB write failed for " + parameterName +
+              ".\nPath: " + odbPath +
+              "\nStatus: " + firstStatus);
+        return;
+      }
+    }
+
+    var changed = didRequestedStringChange(odbPath, stringValue);
+
+    document.getElementById("writeStatus").innerText =
+      parameterName + " written as string value: " + stringValue +
+      "  |  Path: " + odbPath +
+      "  |  Requested change: " + changed;
+
+    currentOdbValues[odbPath] = stringValue;
+    writeUserCommandChangedFlag(changed);
+    readAllOdbValues();
+
+  }).catch(function(error) {
+    mjsonrpc_error_alert(error);
+  });
+
+}
+
+function setOdbString(inputId, odbPath, parameterName) {
+
+  var inputElement = document.getElementById(inputId);
+  var inputText = inputElement.value.trim();
+
+  writeOdbString(odbPath, inputText, parameterName);
+
+}
+
 function setScaledOdbFloat(inputId, odbPath, parameterName, scaleFactor, roundToIntegerHz) {
 
   var inputElement = document.getElementById(inputId);
@@ -523,6 +661,23 @@ function setRsLoPower() {
   setScaledOdbFloat("rsLoPowerSetValue", RS_LO_POWER_PATH, "RS LO power", 1.0);
 }
 
+function setRsLoRosc() {
+  setOdbString("rsLoRoscSetValue", RS_LO_ROSC_PATH, "RS LO Ref Oscill");
+}
+
+function setPumpFrequency() {
+  /* Input in GHz, ODB in Hz. */
+  setScaledOdbFloat("pumpFreqSetValue", PUMP_FREQ_PATH, "Keysight Pump frequency", 1e9, true);
+}
+
+function setPumpPower() {
+  setScaledOdbFloat("pumpPowerSetValue", PUMP_POWER_PATH, "Keysight Pump power", 1.0);
+}
+
+function setPumpRosc() {
+  setOdbString("pumpRoscSetValue", PUMP_ROSC_PATH, "Keysight Pump Ref Oscill");
+}
+
 function setTeledyneCh1Frequency() {
   /* Input in MHz, ODB in Hz. */
   setScaledOdbFloat("teledyneCh1FreqSetValue", TELEDYNE_CH1_FREQ_PATH, "Teledyne CH1 frequency", 1e6, true);
@@ -530,6 +685,10 @@ function setTeledyneCh1Frequency() {
 
 function setTeledyneCh1Vpp() {
   setScaledOdbFloat("teledyneCh1VppSetValue", TELEDYNE_CH1_VPP_PATH, "Teledyne CH1 Vpp", 1.0);
+}
+
+function setTeledyneCh1Rosc() {
+  setOdbString("teledyneCh1RoscSetValue", TELEDYNE_ROSC_PATH, "Teledyne Ref Oscill");
 }
 
 function setTeledyneCh2Frequency() {
@@ -556,6 +715,14 @@ function setRsLoOn() {
 
 function setRsLoOff() {
   setOutputState(RS_LO_OUTPUT_PATH, "RS LO output", false);
+}
+
+function setPumpOn() {
+  setOutputState(PUMP_OUTPUT_PATH, "Keysight Pump output", true);
+}
+
+function setPumpOff() {
+  setOutputState(PUMP_OUTPUT_PATH, "Keysight Pump output", false);
 }
 
 function setTeledyneCh1On() {
@@ -587,14 +754,18 @@ function setTeledyneCh2Off() {
 
   <div id="mmain">
 
-    <div id="readStatus" class="statusText">Readback not yet updated.</div>
-    <div id="writeStatus" class="statusText">No write command sent yet.</div>
+    <div class="statusText">
+      Read status: <span id="readStatus">---</span>
+    </div>
+
+    <div class="statusText">
+      Write status: <span id="writeStatus">---</span>
+    </div>
 
     <div class="changeFlagBox">
-      User command changed flag:
+      User command hasChanged flag:
       <span id="hasChangedDisplay" class="outputIndicator outputUnknown">UNKNOWN</span>
       <br>
-      <span class="statusText">TRUE if the last user SET/ON/OFF command requested a different value from the last ODB readback; FALSE if the requested value was already present.</span>
     </div>
 
     <!-- RS LO box -->
@@ -627,6 +798,20 @@ function setTeledyneCh2Off() {
         <td><input class="mbutton" id="btnRsLoSetPower" type="button" value="SET" onclick="setRsLoPower()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
       </tr>
       <tr align="center">
+        <td>Ref Oscill</td>
+        <td style="font-weight:bold;color:green"><span id="rsLoRoscDisplay">---</span></td>
+        <td>String</td>
+        <td class="setcell">
+          <select id="rsLoRoscSetValue">
+          <option value="">Select</option>
+          <option value="INT">INT</option>
+          <option value="EXT">EXT</option>
+          </select>
+        </td>
+        <td><input class="mbutton" id="btnRsLoSetRosc" type="button" value="SET" onclick="setRsLoRosc()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+
+      <tr align="center">
         <td>Output state</td>
         <td style="font-weight:bold;color:green"><span id="rsLoOutputDisplay" class="outputIndicator outputUnknown">UNKNOWN</span></td>
         <td>ON/OFF</td>
@@ -637,6 +822,7 @@ function setTeledyneCh2Off() {
         </td>
       </tr>
     </table>
+
 
     <!-- Teledyne CH1 box -->
     <table class="mtable loBox">
@@ -667,6 +853,20 @@ function setTeledyneCh2Off() {
         <td class="setcell"><input id="teledyneCh1VppSetValue" type="number" step="any" placeholder="Vpp [V]"></td>
         <td><input class="mbutton" id="btnTeledyneCh1SetVpp" type="button" value="SET" onclick="setTeledyneCh1Vpp()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
       </tr>
+      <tr align="center">
+        <td>Ref Oscill</td>
+        <td style="font-weight:bold;color:green"><span id="teledyneCh1RoscDisplay">---</span></td>
+        <td>String</td>
+        <td class="setcell">
+          <select id="teledyneCh1RoscSetValue">
+          <option value="">Select</option>
+          <option value="INT">INT</option>
+          <option value="EXT">EXT</option>
+          </select>
+        </td>
+        <td><input class="mbutton" id="btnTeledyneCh1SetRosc" type="button" value="SET" onclick="setTeledyneCh1Rosc()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+
       <tr align="center">
         <td>Output state</td>
         <td style="font-weight:bold;color:green"><span id="teledyneCh1OutputDisplay" class="outputIndicator outputUnknown">UNKNOWN</span></td>
@@ -716,6 +916,62 @@ function setTeledyneCh2Off() {
         <td>
           <input class="mbutton" id="btnTeledyneCh2On" type="button" value="ON" onclick="setTeledyneCh2On()" style="padding: 7px 20px;font-size:18px;margin:5px">
           <input class="mbutton" id="btnTeledyneCh2Off" type="button" value="OFF" onclick="setTeledyneCh2Off()" style="padding: 7px 20px;font-size:18px;margin:5px">
+        </td>
+      </tr>
+    </table>
+
+
+        <!-- Keysight Pump box -->
+    <table class="mtable loBox">
+      <tr>
+        <th class="mtableheader" colspan="5">Keysight (Pump)</th>
+      </tr>
+
+      <tr align="center">
+        <th width="220">Parameter</th>
+        <th width="220">Current value</th>
+        <th width="120">Unit</th>
+        <th width="220">Set value</th>
+        <th width="120">Command</th>
+      </tr>
+
+      <tr align="center">
+        <td>Current frequency</td>
+        <td style="font-weight:bold;color:green"><span id="pumpFreqGHzDisplay">---</span></td>
+        <td>GHz</td>
+        <td class="setcell"><input id="pumpFreqSetValue" type="number" step="any" placeholder="Frequency [GHz]"></td>
+        <td><input class="mbutton" id="btnPumpSetFreq" type="button" value="SET" onclick="setPumpFrequency()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+
+      <tr align="center">
+        <td>Current power</td>
+        <td style="font-weight:bold;color:green"><span id="pumpPowerDisplay">---</span></td>
+        <td>dBm</td>
+        <td class="setcell"><input id="pumpPowerSetValue" type="number" step="any" placeholder="Power [dBm]"></td>
+        <td><input class="mbutton" id="btnPumpSetPower" type="button" value="SET" onclick="setPumpPower()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+      <tr align="center">
+        <td>Ref Oscill</td>
+        <td style="font-weight:bold;color:green"><span id="pumpRoscDisplay">---</span></td>
+        <td>String</td>
+        <td class="setcell">
+          <select id="pumpRoscSetValue">
+          <option value="">Select</option>
+          <option value="INT">INT</option>
+          <option value="EXT">EXT</option>
+          </select>
+        </td>
+        <td><input class="mbutton" id="btnPumpSetRosc" type="button" value="SET" onclick="setPumpRosc()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+      </tr>
+
+      <tr align="center">
+        <td>Output state</td>
+        <td style="font-weight:bold;color:green"><span id="pumpOutputDisplay" class="outputIndicator outputUnknown">UNKNOWN</span></td>
+        <td>ON/OFF</td>
+        <td class="setcell">Use buttons to enable/disable output</td>
+        <td>
+          <input class="mbutton" id="btnPumpOn" type="button" value="ON" onclick="setPumpOn()" style="padding: 7px 20px;font-size:18px;margin:5px">
+          <input class="mbutton" id="btnPumpOff" type="button" value="OFF" onclick="setPumpOff()" style="padding: 7px 20px;font-size:18px;margin:5px">
         </td>
       </tr>
     </table>

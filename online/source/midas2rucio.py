@@ -9,8 +9,41 @@ import midas.client
 
 import gspread
 
-LOG = "/home/cold/daq/online/logs/rucio_upload.log"
+from dotenv import load_dotenv
+import requests
 
+LOG = "/home/cold/daq/online/logs/rucio_upload.log"
+#
+# 27/4/26 G.M 
+# versione modificata per pasare la variabile BEARER_TOKEN a pigz uploader, che la passa a rucio client dentro il container docker.
+# lasciando invariato la docker image, che quindi rimane la stessa di CYGNO che non ha la variabile d'ambiente, ma se la aspetta come argomento da linea di comando.
+#
+def get_storage_access_token(config_path="/home/.storage.env"):
+    
+    if not load_dotenv(config_path):
+        print("ERROR: .storage.env file not found or failed to load.")
+        return None
+
+    client_id = os.environ["STORAGE_IAM_CLIENT_ID"]
+    client_secret = os.environ["STORAGE_IAM_CLIENT_SECRET"]
+    scopes = os.environ["STORAGE_SCOPES"]
+    refresh_token = os.environ["STORAGE_REFRESH_TOKEN"]
+    endpoint = os.environ["STORAGE_IAM_TOKEN_ENDPOINT"].rstrip("/")
+
+    response = requests.post(
+        f"{endpoint}/token",
+        auth=(client_id, client_secret),
+        data={
+            "scopes": scopes,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        },
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+    return response.json()["access_token"]
 
 def log(msg: str, dmp_on_file: bool = False) -> None:
     """Scrive una riga nel log con timestamp."""
@@ -145,25 +178,34 @@ def main() -> int:
         print('ERROR: ', e)
         c.disconnect()
         return 1
+
+    bearer_token = get_storage_access_token()
+    if not bearer_token:
+        log("ERROR: Failed to obtain storage access token.")
+        return 1    
+
     if record['write']==1:
         # Comando docker per RUCIO
+ 
         docker_cmd = [
             "docker",
             "run",
             "--rm",
+            "-e",
+            f"BEARER_TOKEN={bearer_token}",
             "-v",
             "/home/.rucio.cfg:/home/.rucio.cfg",
             "-v",
             f"{full_path}:/app/{name}",
-            "gmazzitelli/rucio-uploader:v0.3",
+            "gmazzitelli/rucio-uploader:v0.4",
             "--file",
             f"/app/{name}",
             "--bucket",
-            "cygno-data",
+            "data",
             "--did_name",
-            f"FLASH/QUAX/TEST/{name}",
+            f"LNF/{name}",
             "--upload_rse",
-            "CNAF_USERDISK",
+            "T1_USERDISK",
             "--transfer_rse",
             "T1_USERTAPE",
             "--account",

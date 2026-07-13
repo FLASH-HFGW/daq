@@ -37,9 +37,9 @@ bearer_token = os.environ.get("BEARER_TOKEN")
 
 if bearer_token:
     os.environ["RUCIO_AUTH_TOKEN"] = bearer_token
-    print(bearer_token)
+    print("[INFO] BEARER_TOKEN/RUCIO_AUTH_TOKEN environment variable setted")
 else:
-    print("[WARNING] Missing BEARER_TOKEN environment variable")
+    print("[WARNING/ERROR] Missing BEARER_TOKEN/RUCIO_AUTH_TOKEN environment variable")
 
 
 # Parse arguments

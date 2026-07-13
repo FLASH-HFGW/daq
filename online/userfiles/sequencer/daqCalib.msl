@@ -1,0 +1,36 @@
+PARAM nev, "number of events", 5
+
+PARAM fstart, "calib freq start", 8.8363e9
+PARAM fstop, "calib freq stop", 8.8423e9
+PARAM nsteps, "n steps", 61
+
+#RUNDESCRIPTION "DAQ calibration 1st mode, from -3MHz to +3MHz"
+
+ODBSET "/Equipment/LocalOscill/daqCalibration/f_start", $fstart
+ODBSET "/Equipment/LocalOscill/daqCalibration/f_stop", $fstop
+ODBSET "/Equipment/LocalOscill/daqCalibration/N_steps", $nsteps
+
+ODBSET "/Equipment/LocalOscill/daqCalibration/Calib", 1
+
+ODBSET "/Logger/Write data", 1
+ODBSET "/Experiment/Run Parameters/With_LO", 1
+ODBSET "/Equipment/Netbox/Common/Event limit", $nev
+
+LOOP i, $nsteps
+   ODBSET "/Custom/Rucio run status", 0
+   ODBGET "/Equipment/LocalOscill/daqCalibration/freqs[$i]", myfreq
+   ODBSET "/Equipment/LocalOscill/Variables/freq Pump", $myfreq
+   WAIT seconds, 1
+
+   TRANSITION start
+   WAIT ODBvalue, "/Runinfo/State", ==, 1
+
+   # small settle time for hardware/FE cleanup
+   WAIT seconds, 1
+   WAIT ODBvalue, "/Custom/Rucio run status", ==, 1
+  
+ENDLOOP
+
+ODBSET "/Equipment/LocalOscill/daqCalibration/Calib", 0
+
+MSG "All runs completed"

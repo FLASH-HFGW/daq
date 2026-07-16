@@ -139,10 +139,11 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                 self.vna.trigger_mode(mode='CONT', state='OFF')
 
                 calibState = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Calib_state"))
+                description = self.client.odb_get("/Equipment/{:}/vnaCalib/{:}".format(self.equip_name, "Description"))
 
                 freq = np.linspace(center-span/2, center+span/2, Npoints)
 
-                if calibState == "S51":
+                if calibState == "S22cav": #S51 sulle linee
                     Get_HTTP_Result("SETA=1")   # Set switch A
                     Get_HTTP_Result("SETB=0")   # Set switch B
                     Get_HTTP_Result("SETC=1")   # Set switch C
@@ -158,12 +159,14 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     data = np.c_[freq, y1, y2]
                     now = datetime.now()
                     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-                    np.savetxt('/home/cold/data/{:}_{:}.txt'.format(calibState, timestamp), data)
+                    np.savetxt('/home/cold/data/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
 
-                    calibState = '0'
-                    self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Calib_state"), calibState)
+                    #save on ODB real and imag data of selected scattering parameter
+                    self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataReal".format(self.equip_name, calibState), y1)
+                    self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataImag".format(self.equip_name, calibState), y2)
 
-                elif calibState == "S53":
+
+                elif calibState == "S21cav":   #S53 sulle linee
                     Get_HTTP_Result("SETA=0")   # Set switch A
                     Get_HTTP_Result("SETB=0")   # Set switch B
                     Get_HTTP_Result("SETC=1")   # Set switch C
@@ -179,9 +182,14 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     data = np.c_[freq, y1, y2]
                     now = datetime.now()
                     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-                    np.savetxt('/home/cold/data/{:}_{:}.txt'.format(calibState, timestamp), data)
+                    np.savetxt('/home/cold/data/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
 
-                elif calibState == "S31":
+                    #save on ODB real and imag data of selected scattering parameter
+                    self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataReal".format(self.equip_name, calibState), y1)
+                    self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataImag".format(self.equip_name, calibState), y2)
+
+
+                elif calibState == "S12cav":   #S31 sulle linee
                     Get_HTTP_Result("SETA=0")   # Set switch A
                     Get_HTTP_Result("SETB=1")   # Set switch B
                     Get_HTTP_Result("SETC=0")   # Set switch C
@@ -197,9 +205,14 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     data = np.c_[freq, y1, y2]
                     now = datetime.now()
                     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-                    np.savetxt('/home/cold/data/{:}_{:}.txt'.format(calibState, timestamp), data)
+                    np.savetxt('/home/cold/data/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
 
-                elif calibState == "S33":
+                    #save on ODB real and imag data of selected scattering parameter
+                    self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataReal".format(self.equip_name, calibState), y1)
+                    self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataImag".format(self.equip_name, calibState), y2)
+
+
+                elif calibState == "S11cav":   #S33 sulle linee
                     Get_HTTP_Result("SETA=0")   # Set switch A
                     Get_HTTP_Result("SETB=0")   # Set switch B
                     Get_HTTP_Result("SETC=0")   # Set switch C
@@ -215,7 +228,12 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     data = np.c_[freq, y1, y2]
                     now = datetime.now()
                     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-                    np.savetxt('/home/cold/data/{:}_{:}.txt'.format(calibState, timestamp), data)
+                    np.savetxt('/home/cold/data/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
+
+                    #save on ODB real and imag data of selected scattering parameter
+                    self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataReal".format(self.equip_name, calibState), y1)
+                    self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataImag".format(self.equip_name, calibState), y2)
+
 
                 elif calibState == "0":
                     self.vna.output(1)
@@ -225,9 +243,9 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     self.vna.autoscale(trace=1)
 
 
+                #resets calibState flag
                 calibState = '0'
                 self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Calib_state"), calibState)
-
 
                 self.vna.trigger_mode(mode='CONT', state='OFF')
                 self.vna.output(0)
@@ -372,7 +390,10 @@ class MySAEquipment(midas.frontend.EquipmentBase):
                 
                 self.sa.enable_measurement_channel(channel_number=1)
                 self.sa.initiate_measurement()
-                self.sa.save_trace_to_file(trace_number=1, file_path=self.savePath+'_{:}.txt'.format(timestamp) )
+                fsweep, P = self.sa.fetch_trace()
+                data = np.c_[fsweep, P]
+                np.savetxt('{:}_{:}.txt'.format(self.savePath, timestamp), data)
+                #self.sa.save_trace_to_file(trace_number=1, file_path=self.savePath+'_{:}.txt'.format(timestamp) )
                 
                 self.sa.disable_measurement_channel(channel_number=1)
                 self.sa.average_state('OFF')

@@ -1,20 +1,26 @@
 COMMENT 5 runs of 500 events each (delta method)
-
 # Set the auto-stop limit (this part you already know works)
-PARAM nruns, "Number of runs", 15
-PARAM nev,   "Events per run", 850
-RUNDESCRIPTION "test sequenza 15 run 850 ev"
+PARAM nruns, "Number of runs", 18
+PARAM nev,   "Events per run", 1000
+PARAM range, "Input range (mV) of ADC channels", 5000
+
+RUNDESCRIPTION "QUAX-Run2 - subrun 3. 18 runs 1000 ev"
 ODBSET "/Logger/Write data", 1
 ODBSET "/Experiment/Run Parameters/With_LO", 1
+ODBSET "/Equipment/CryoSwitch/Variables/RT1_set", 1
+ODBSET "/Equipment/CryoSwitch/Variables/CR1_set", 2
 
 ODBSET "/Equipment/Netbox/Common/Event limit", $nev
 
+LOOP j, 0, 1, 2, 3, 4, 5
+  ODBSET "/Equipment/Netbox/Settings/Channel_range_mV[$j]", $range
+ENDLOOP
+
 LOOP i, $nruns
   ODBSET "/Custom/Rucio run status", 0
-
+  
   TRANSITION start
   WAIT ODBvalue, "/Runinfo/State", ==, 1
-
   # small settle time for hardware/FE cleanup
   # WAIT seconds, 1
   WAIT ODBvalue, "/Custom/Rucio run status", ==, 1
@@ -22,3 +28,6 @@ LOOP i, $nruns
 ENDLOOP
 
 MSG "All runs completed"
+
+ODBSET "/Equipment/CryoSwitch/Variables/RT1_set", 2
+ODBSET "/Equipment/CryoSwitch/Variables/CR1_set", 1

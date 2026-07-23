@@ -175,7 +175,7 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     self.vna.format(format='POL')
                     self.vna.output(1)
                     self.vna.inst.write(':INIT1')
-                    time.sleep(0.1)
+                    time.sleep(0.05)
                     #retrieve data from VNA sweep
                     y1, y2 = self.vna.read_znb()
                     self.vna.autoscale(trace=1)

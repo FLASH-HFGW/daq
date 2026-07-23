@@ -77,6 +77,7 @@ const IFBW_PATH    = VNA_BASE + "IFBW_Hz";
 const CENTER_PATH  = VNA_BASE + "Center_Hz";
 const SPAN_PATH    = VNA_BASE + "Span_Hz";
 const POWER_PATH   = VNA_BASE + "Power_dBm";
+const DESCRIPTION_PATH = "/Equipment/VNA/vnaCalib/Description";
 
 const HAS_CHANGED_PATH  = VNA_BASE + "hasChanged";
 const CALIB_STATE_PATH  = VNA_BASE + "Calib_state";
@@ -151,7 +152,8 @@ function readVnaValues() {
     IFBW_PATH,
     CENTER_PATH,
     SPAN_PATH,
-    POWER_PATH
+    POWER_PATH,
+    DESCRIPTION_PATH
   ];
 
   mjsonrpc_db_get_values(paths).then(function(rpc) {
@@ -165,6 +167,7 @@ function readVnaValues() {
     let center  = Number(data[4]);   // Hz
     let span    = Number(data[5]);   // Hz
     let power   = Number(data[6]);   // dBm
+    let description = data[7];
 
     document.getElementById("scatterParameterDisplay").innerText = scatter;
     document.getElementById("formatDisplay").innerText = format;
@@ -179,6 +182,12 @@ function readVnaValues() {
 
     document.getElementById("powerDisplay").innerText =
       power.toFixed(2);
+
+    let descBox = document.getElementById("descriptionValue");
+
+    if (document.activeElement !== descBox) {
+      descBox.value = description;
+    }   
 
   }).catch(function(error) {
 
@@ -234,6 +243,19 @@ function startCalibration(calibState) {
 
   });
 
+}
+
+function saveDescription()
+{
+    let text = document.getElementById("descriptionValue").value;
+
+    mjsonrpc_db_paste(
+        [DESCRIPTION_PATH],
+        [text]
+    ).catch(function(error) {
+        console.error(error);
+        mjsonrpc_error_alert(error);
+    });
 }
 
 
@@ -398,32 +420,45 @@ function saveSaCalibration() {
 
   <td rowspan="8" style="vertical-align:middle">
 
+
+    <div style="margin-bottom:15px; text-align:center;">
+    <label for="descriptionValue"><b>Description</b></label><br>
+    <input
+        type="text"
+        id="descriptionValue"
+        style="width:180px; margin-top:5px;"
+        placeholder="Param Description"
+        onchange="saveDescription()">
+
+    </div>
+
+
     <input class="mbutton"
-           id="btnCalibrateS51"
+           id="btnCalibrateS22cav"
            type="button"
-           value="S51"
-           onclick="startCalibration('S51')"
+           value="S22cav"
+           onclick="startCalibration('S22cav')"
            style="padding:7px 20px;font-size:18px;margin:8px"><br>
 
     <input class="mbutton"
-           id="btnCalibrateS53"
+           id="btnCalibrateS21cav"
            type="button"
-           value="S53"
-           onclick="startCalibration('S53')"
+           value="S21cav"
+           onclick="startCalibration('S21cav')"
            style="padding:7px 20px;font-size:18px;margin:8px"><br>
 
     <input class="mbutton"
-           id="btnCalibrateS31"
+           id="btnCalibrateS12cav"
            type="button"
-           value="S31"
-           onclick="startCalibration('S31')"
+           value="S12cav"
+           onclick="startCalibration('S12cav')"
            style="padding:7px 20px;font-size:18px;margin:8px"><br>
 
     <input class="mbutton"
-           id="btnCalibrateS33"
+           id="btnCalibrateS11cav"
            type="button"
-           value="S33"
-           onclick="startCalibration('S33')"
+           value="S11cav"
+           onclick="startCalibration('S11cav')"
            style="padding:7px 20px;font-size:18px;margin:8px">
 
   </td>

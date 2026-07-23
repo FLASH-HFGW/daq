@@ -86,7 +86,7 @@ def main() -> int:
     HEADER = [
        "run", "description", "start_date", "start_epoch", "filename",
        "beam_status", "end_date", "end_epoch", "events",
-       "end_description", "rucio_status"
+       "end_description", "rucio_status", "rucio_messages", "local_file"
     ]
     record = {key: "" for key in HEADER}
     gc = gspread.service_account(filename='/home/.logbook-478712-cffc1d289aa8.json')
@@ -111,6 +111,8 @@ def main() -> int:
         record['end_description'] = ""
         record['write']       = c.odb_get("Logger/Write data")
         record['rucio_status']= -1
+        record['local_file']= -1
+        record['reco_done']= -1
 
         # to be sure to get right file information
         c.odb_set("/Custom/Rucio run status", 1)
@@ -159,6 +161,7 @@ def main() -> int:
 
 
         log("Compressione riuscita!")
+        record['local_file']= 1
     except subprocess.CalledProcessError as e:
         log("❌ Errore durante la compressione!")
         log("Return code:", e.returncode)
@@ -250,6 +253,7 @@ def main() -> int:
         try:
             if (rucio_status==0 or rucio_status==1):
                c.msg("INFO: RUCIO upload DONE for {:s}".format(full_path))
+               record['reco_done']=0
             else:
                c.msg("ERROR: RUCIO upload FAIL for {:s}".format(full_path))
         except Exception as e:

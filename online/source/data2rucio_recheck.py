@@ -4,6 +4,8 @@ import glob
 import subprocess
 from datetime import datetime
 from typing import Dict, Any, List, Tuple, Optional
+from dotenv import load_dotenv
+import requests
 
 import gspread
 
@@ -33,7 +35,36 @@ def log(msg: str, dmp_on_file: bool = True, verbose: bool = True) -> None:
         os.makedirs(os.path.dirname(LOG), exist_ok=True)
         with open(LOG, "a") as f:
             f.write(line + "\n")
+ 
+# versione modificata per pasare la variabile BEARER_TOKEN a pigz uploader, che la passa a rucio client dentro il container docker.
+# lasciando invariato la docker image, che quindi rimane la stessa di CYGNO che non ha la variabile d'ambiente, ma se la aspetta come argomento da linea di comando.
+#
+def get_storage_access_token(config_path="/home/.storage.env"):
+    
+    if not load_dotenv(config_path):
+        print("ERROR: .storage.env file not found or failed to load.")
+        return None
 
+    client_id = os.environ["STORAGE_IAM_CLIENT_ID"]
+    client_secret = os.environ["STORAGE_IAM_CLIENT_SECRET"]
+    scopes = os.environ["STORAGE_SCOPES"]
+    refresh_token = os.environ["STORAGE_REFRESH_TOKEN"]
+    endpoint = os.environ["STORAGE_IAM_TOKEN_ENDPOINT"].rstrip("/")
+
+    response = requests.post(
+        f"{endpoint}/token",
+        auth=(client_id, client_secret),
+        data={
+            "scopes": scopes,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        },
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+    return response.json()["access_token"]
 # --- sheet helpers ---
 def ensure_headers(ws, header_list: List[str]) -> List[str]:
     first_row = ws.row_values(1)
@@ -93,24 +124,46 @@ def parse_rucio_status(raw: Any) -> Optional[int]:
         return None
 
 # --- rucio upload ---
-def rucio_upload_gz(full_path_gz: str) -> Tuple[int, str, str]:
+def rucio_upload_gz(
+    full_path_gz: str,
+    bearer_token: str
+) -> Tuple[int, str, str]:
+
     name = os.path.basename(full_path_gz)
 
     docker_cmd = [
-        "docker", "run", "--rm",
-        "-v", "/home/.rucio.cfg:/home/.rucio.cfg",
-        "-v", f"{full_path_gz}:/app/{name}",
-        "gmazzitelli/rucio-uploader:v0.3",
-        "--file", f"/app/{name}",
-        "--bucket", "cygno-data",
-        "--did_name", f"FLASH/QUAX/TEST/{name}",
-        "--upload_rse", "CNAF_USERDISK",
-        "--transfer_rse", "T1_USERTAPE",
-        "--account", "rucio-daq",
+        "docker",
+        "run",
+        "--rm",
+        "-e",
+        f"BEARER_TOKEN={bearer_token}",
+        "-v",
+        "/home/.rucio.cfg:/home/.rucio.cfg",
+        "-v",
+        f"{full_path_gz}:/app/{name}",
+        "gmazzitelli/rucio-uploader:v0.4",
+        "--file",
+        f"/app/{name}",
+        "--bucket",
+        "data",
+        "--did_name",
+        f"LNF/{name}",
+        "--upload_rse",
+        "T1_USERDISK",
+        "--transfer_rse",
+        "T1_USERTAPE",
+        "--account",
+        "rucio-daq",
     ]
 
     log("Running: " + " ".join(docker_cmd))
-    result = subprocess.run(docker_cmd, capture_output=True, text=True)
+
+    result = subprocess.run(
+        docker_cmd,
+        capture_output=True,
+        text=True
+    )
+
     return result.returncode, result.stdout, result.stderr
 
 # --- main flow ---
@@ -141,7 +194,11 @@ def main() -> int:
     skipped_missing = 0
     skipped_ok = 0
     updated = 0
+    bearer_token = get_storage_access_token()
 
+    if not bearer_token:
+        log("ERROR: Failed to obtain storage access token.")
+        return 1
     for fpath in files:
         fname = os.path.basename(fpath)
 
@@ -163,7 +220,7 @@ def main() -> int:
         retried += 1
         log(f"RETRY: {fname} (row {row}) rucio_status_raw='{raw_status}' parsed={status} -> provo upload")
 
-        exit_code, out, err = rucio_upload_gz(fpath)
+        exit_code, out, err = rucio_upload_gz(fpath, bearer_token)
 
         now = datetime.now().isoformat(timespec="seconds")
         note = f"[{now}] reupload exit_code={exit_code}"

@@ -6,6 +6,7 @@ import numpy as np
 import os
 import json
 from pyftdi import gpio
+from pyftdi.ftdi import Ftdi
 from qcodes.instrument_drivers.AimTTi import _AimTTi_PL_P
 import time
 
@@ -44,10 +45,9 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
         # You MUST call midas.frontend.EquipmentBase.__init__ in your equipment's __init__ method!
         midas.frontend.EquipmentBase.__init__(self, client, equip_name, default_common)
         
-        self.releController = gpio.GpioAsyncController()
-        self.releController.configure('ftdi://ftdi:232h:FT7UQ713/1',direction=0xff)
-        self.releController.write(0xff)
-        #self.releController.close()
+        self.releController = gpio.GpioMpsseController()
+        self.releController.configure('ftdi://ftdi:232h:FT7UQ713/1',direction=0xFFFF,frequency=1e5)
+        self.releController.write(0xFFFF)
         self.tti = _AimTTi_PL_P.AimTTi("tti", "TCPIP::192.168.2.110::9221::SOCKET");
         self.tti.ch1.volt.set(28.0)
         voltage = self.tti.ch1.volt.get()
@@ -55,11 +55,11 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
         client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "Voltage"), voltage) #tensione alimentatore
         
         ###switch CR1
-        #client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"), 0)
-        #client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_status"), 0)
-        ###switch CR2 e CR1
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_set"), 0)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_status"), 0)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"), 0)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_status"), 0)
+        ###switch CR2
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR2_set"), 0)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR2_status"), 0)
         ###switch RT1
         client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_set"), 0)
         client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_status"), 0)
@@ -78,81 +78,77 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
         
         equip_name = "CryoSwitch"
         chan1 = self.tti.ch1.channel
-        #cr1set = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"))
-        cr2set = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_set"))
+        cr1set = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"))
+        cr2set = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "CR2_set"))
         rt1set = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_set"))
         
 
         ######## switch CR1
-        # if cr1set == 0:
-        #     pass
+        if cr1set == 0:
+            pass
         
-        # elif cr1set==1:
+        elif cr1set==1:
             
-        #     #0,1 ON
-        #     self.releController.write(252)
-        #     time.sleep(0.005)
-        #     #0,1, 3,4 ON
-        #     self.releController.write(228)
-        #     self.tti.write(f"OP{chan1} 1")
-        #     time.sleep(0.008)
-        #     print('Done.\n')
-        #     self.tti.write(f"OP{chan1} 0")
-        #     self.releController.write(0xff)
+            self.releController.write(0xF7FE)
+            time.sleep(0.005)
+            self.releController.write(0xF3FC)
+            self.tti.write(f"OP{chan1} 1")
+            time.sleep(0.008)
+            print('Done.\n')
+            self.tti.write(f"OP{chan1} 0")
+            self.releController.write(0xFFFF)
            
-        #     self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_status"), 1)
-        #     self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"), 0) 
-        #     self.client.msg("Switch CR1 has been changed to C-1.")
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_status"), 1)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"), 0) 
+            self.client.msg("Switch CR1 has been changed to C-1.")
         
-        # elif cr1set==2:
+        elif cr1set==2:
             
-        #     #3,4 ON
-        #     self.releController.write(231)
-        #     self.tti.write(f"OP{chan1} 1")
-        #     time.sleep(0.008)
-        #     print('Done.\n')
-        #     self.tti.write(f"OP{chan1} 0")
-        #     self.releController.write(0xff)
+            self.releController.write(0xFBFD)
+            self.tti.write(f"OP{chan1} 1")
+            time.sleep(0.008)
+            print('Done.\n')
+            self.tti.write(f"OP{chan1} 0")
+            self.releController.write(0xFFFF)
             
-        #     self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_status"), 2)
-        #     self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"), 0) 
-        #     self.client.msg("Switch CR1 has been changed to C-2.")
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_status"), 2)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR1_set"), 0) 
+            self.client.msg("Switch CR1 has been changed to C-2.")
         
 
         
-        ######## switch CR2 e CR1
+        ######## switch CR2
         if cr2set == 0:
             pass
         
         elif cr2set==1:
             
-            #2,5 ON
-            self.releController.write(252)
+            #self.releController.write(252)
+            self.releController.write(0xF7EF)
             time.sleep(0.005)
-            #2,5, 3,4 ON
-            self.releController.write(228)
+            # self.releController.write(228)
+            self.releController.write(0xCFCF)
             self.tti.write(f"OP{chan1} 1")
             time.sleep(0.008)
             print('Done.\n')
             self.tti.write(f"OP{chan1} 0")
-            self.releController.write(0xff)
+            self.releController.write(0xFFFF)
            
-            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_status"), 1)
-            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_set"), 0) 
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR2_status"), 1)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR2_set"), 0) 
             self.client.msg("Cryo Switch has been changed to C-1.")
         
         elif cr2set==2:
             
-            #3,4 ON
-            self.releController.write(231)
+            self.releController.write(0xDFEF)
             self.tti.write(f"OP{chan1} 1")
             time.sleep(0.008)
             print('Done.\n')
             self.tti.write(f"OP{chan1} 0")
-            self.releController.write(0xff)
+            self.releController.write(0xFFFF)
             
-            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_status"), 2)
-            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR_set"), 0) 
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR2_status"), 2)
+            self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "CR2_set"), 0) 
             self.client.msg("Cryo Switch has been changed to C-2.")
             
             
@@ -163,16 +159,14 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
         
         elif rt1set==1:
             
-            #6,7 ON
-            self.releController.write(63)
-            #time.sleep(0.005)
-            #6,7, 3,4 ON
-            #self.releController.write(39)
+            self.releController.write(0xBF7F)
+            time.sleep(0.005)
+            self.releController.write(0x3F3F)
             self.tti.write(f"OP{chan1} 1")
-            time.sleep(0.020)
+            time.sleep(0.03)
             print('Done.\n')
             self.tti.write(f"OP{chan1} 0")
-            self.releController.write(0xff)
+            self.releController.write(0xFFFF)
            
             self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_status"), 1)
             self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_set"), 0) 
@@ -180,13 +174,12 @@ class MySwitchEquipment(midas.frontend.EquipmentBase):
         
         elif rt1set==2:
             
-            #3,4 ON
-            #self.releController.write(231)
+            self.releController.write(0x7FBF)
             self.tti.write(f"OP{chan1} 1")
-            time.sleep(0.020)
+            time.sleep(0.03)
             print('Done.\n')
             self.tti.write(f"OP{chan1} 0")
-            self.releController.write(0xff)
+            self.releController.write(0xFFFF)
             
             self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_status"), 2)
             self.client.odb_set("/Equipment/{:}/Variables/{:}".format(equip_name, "RT1_set"), 0) 

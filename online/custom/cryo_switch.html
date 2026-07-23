@@ -27,6 +27,74 @@ input[type=number] {
 
 input[type=number][disabled]{color:transparent; background-color:transparent; border-width: 0px;}
 
+.rack-switch-panel {
+  --rack-led-c1: #2eb85c;
+  --rack-led-c2: #ff9500;
+  --rack-active-path: #1677ff;
+  width: min(100%, 1000px);
+  margin: 24px auto 0;
+}
+.rack-switch-panel svg { display:block; width:100%; height:auto; }
+.rack-chassis { fill:#e8ebef; stroke:#777; stroke-width:2; }
+.rack-ear, .rack-divider { fill:none; stroke:#777; stroke-width:2; }
+.rack-screw { fill:#aaa; stroke:#555; stroke-width:1.5; }
+.rack-connector-outer { fill:#b7bcc3; stroke:#292929; stroke-width:2; }
+.rack-connector-inner { fill:#fafafa; stroke:#666; stroke-width:1.5; }
+.rack-signal-path {
+  fill:none; stroke:var(--rack-active-path); stroke-width:6;
+  stroke-linecap:round; opacity:0; transition:opacity 120ms ease;
+}
+.rack-signal-path.active { opacity:1; }
+.rack-led { fill:#8b8f94; stroke:#666; stroke-width:2; transition:fill 120ms ease; }
+.rack-led.c1 { fill:var(--rack-led-c1); }
+.rack-led.c2 { fill:var(--rack-led-c2); }
+.rack-svg-label {
+  fill:#202124; font-family:Arial,sans-serif; font-size:16px; font-weight:bold;
+}
+.rack-svg-small { fill:#555; font-family:Arial,sans-serif; font-size:14px; }
+.rack-controls {
+  display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-top:10px;
+}
+.rack-control { min-width:0; text-align:center; }
+.rack-control strong { display:block; margin-bottom:4px; }
+.rack-control .mbutton { padding:7px 14px; margin:3px; font-size:16px; }
+.rack-control .mbutton.selected { box-shadow:inset 0 0 0 3px var(--rack-active-path); }
+.rack-presets-title {
+  width:fit-content;
+  margin:22px auto 0;
+  padding:7px 18px;
+  border:1px solid #999;
+  border-radius:6px;
+  background:#e8ebef;
+  color:#202124;
+  text-align:center;
+}
+.rack-presets {
+  display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-top:10px;
+}
+.rack-preset { min-width:0; text-align:center; }
+.rack-preset strong { display:block; margin-bottom:7px; }
+.rack-preset .mbutton { padding:8px 18px; font-size:16px; }
+.rack-preset .mbutton.selected { box-shadow:inset 0 0 0 3px var(--rack-active-path); }
+.rack-status { min-height:1.3em; margin-top:10px; color:#555; font-size:14px; }
+.rack-status.error { color:#b00020; font-weight:bold; }
+.rack-legend {
+  display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:8px; color:#555; font-size:14px;
+}
+.rack-legend-item { display:inline-flex; align-items:center; gap:6px; }
+.rack-legend-dot { width:11px; height:11px; border:1px solid #777; border-radius:50%; }
+.rack-legend-dot.c1 { background:var(--rack-led-c1); }
+.rack-legend-dot.c2 { background:var(--rack-led-c2); }
+@media (max-width:650px) {
+  .rack-controls, .rack-presets { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:380px) {
+  .rack-controls, .rack-presets { grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .rack-signal-path, .rack-led { transition:none; }
+}
+
 </style>
 
 <script>
@@ -39,9 +107,9 @@ window.onload = function() {
 }
   
 
-function moveTo(id){
+function cr1_moveTo(id){
 
-  var paths = ["/Equipment/CryoSwitch/Variables/CR_set"];
+  var paths = ["/Equipment/CryoSwitch/Variables/CR1_set"];
 
   mjsonrpc_db_paste(paths,[id]).then(function(rpc) {
   }).catch(function(error) {
@@ -51,13 +119,155 @@ function moveTo(id){
 }
 
 
-function moveTo2(id){
+function cr2_moveTo(id){
+
+  var paths = ["/Equipment/CryoSwitch/Variables/CR2_set"];
+
+  mjsonrpc_db_paste(paths,[id]).then(function(rpc) {
+  }).catch(function(error) {
+          mjsonrpc_error_alert(error);
+  });
+
+}
+
+
+function rt1_moveTo(id){
 
   var paths = ["/Equipment/CryoSwitch/Variables/RT1_set"];
 
   mjsonrpc_db_paste(paths,[id]).then(function(rpc) {
   }).catch(function(error) {
           mjsonrpc_error_alert(error);
+  });
+
+}
+
+
+/* Browser equivalent of Calibration.py::Get_HTTP_Result(). */
+function Get_HTTP_Result(CmdToSend) {
+
+  var switchUrl = "http://192.168.2.113/:" + CmdToSend;
+
+  return fetch(switchUrl, {
+    method: "GET",
+    mode: "no-cors",
+    cache: "no-store"
+  });
+
+}
+
+
+var rackSwitchStates = { A: null, B: null, C: null, D: null };
+
+var rackPresetStates = {
+  S11cav: { A: 0, B: 0, C: 0 },
+  S22cav: { A: 1, B: 0, C: 1 },
+  S21cav: { A: 0, B: 0, C: 1 },
+  S12cav: { A: 0, B: 1, C: 0 }
+};
+
+
+function setRackControlsDisabled(disabled) {
+
+  document.querySelectorAll(".rack-control button, .rack-preset button").forEach(function(button) {
+    button.disabled = disabled;
+  });
+
+}
+
+
+function rack_moveTo(switchLabel, port) {
+
+  var command = "SET" + switchLabel + "=" + port;
+  var status = document.getElementById("rack_command_status");
+
+  setRackControlsDisabled(true);
+  status.classList.remove("error");
+  status.textContent = "Invio " + command + "...";
+
+  Get_HTTP_Result(command).then(function() {
+    setRackSwitchState(switchLabel, port);
+    status.textContent = command + " inviato al cassetto.";
+  }).catch(function(error) {
+    status.classList.add("error");
+    status.textContent = "Nessuna risposta dal cassetto: controllare IP e collegamenti.";
+    console.error(error);
+  }).finally(function() {
+    setRackControlsDisabled(false);
+  });
+
+}
+
+
+function rack_switchPreset(presetName) {
+
+  var preset = rackPresetStates[presetName];
+  var switchLabels = Object.keys(preset);
+  var status = document.getElementById("rack_command_status");
+  var commandSequence = Promise.resolve();
+
+  setRackControlsDisabled(true);
+  status.classList.remove("error");
+  status.textContent = "Impostazione " + presetName + "...";
+
+  switchLabels.forEach(function(switchLabel) {
+    commandSequence = commandSequence.then(function() {
+      return Get_HTTP_Result("SET" + switchLabel + "=" + preset[switchLabel]);
+    });
+  });
+
+  commandSequence.then(function() {
+    switchLabels.forEach(function(switchLabel) {
+      setRackSwitchState(switchLabel, preset[switchLabel]);
+    });
+    status.textContent = "Combinazione " + presetName + " impostata.";
+  }).catch(function(error) {
+    status.classList.add("error");
+    status.textContent = "Impossibile impostare " + presetName + ": controllare IP e collegamenti.";
+    console.error(error);
+  }).finally(function() {
+    setRackControlsDisabled(false);
+  });
+
+}
+
+
+function setRackSwitchState(switchLabel, port) {
+
+  var led = document.querySelector('.rack-led[data-switch="' + switchLabel + '"]');
+  var paths = document.querySelectorAll('.rack-signal-path[data-switch="' + switchLabel + '"]');
+  var buttons = document.querySelectorAll('.rack-control[data-switch="' + switchLabel + '"] button');
+
+  rackSwitchStates[switchLabel] = port;
+
+  led.classList.remove("c1", "c2");
+  led.classList.add(port === 0 ? "c1" : "c2");
+
+  paths.forEach(function(path) {
+    path.classList.toggle("active", Number(path.dataset.port) === port);
+  });
+
+  buttons.forEach(function(button) {
+    var selected = Number(button.dataset.port) === port;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+
+  updateRackPresetSelection();
+
+}
+
+
+function updateRackPresetSelection() {
+
+  document.querySelectorAll(".rack-preset button").forEach(function(button) {
+    var preset = rackPresetStates[button.dataset.preset];
+    var selected = Object.keys(preset).every(function(switchLabel) {
+      return rackSwitchStates[switchLabel] === preset[switchLabel];
+    });
+
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
   });
 
 }
@@ -81,9 +291,40 @@ padding: 8px;
   <div id="msidenav"></div>
 
   <div id="mmain">
+
+
+<!-- #### CR1 switch #### !-->
     <table class="mtable" style="font-size:18px">
       <tr>
-    	<th class="mtableheader" id="page_title" colspan="4">Cryo Switch</th>
+      <th class="mtableheader" id="page_title_1" colspan="4">CR1 Switch</th>
+      </tr>
+      <tr>
+  <td colspan="4" style="vertical-align:center">
+    <table class="mtable" style="font-size:18px">
+      <tr align="center">
+        <td width="200">Current Position</td>
+        <td width="200" style="font-weight:bold;color:green">
+          <div class="modbvalue" data-format="d" data-odb-path="/Equipment/CryoSwitch/Variables/CR1_status">
+          </div>
+        </td>
+      </tr>
+    </table>
+  </td>
+      </tr>
+      <tr>
+  <td><input class="mbutton" id="btnP0" type="button" value="C-1" onclick="cr1_moveTo(1)" style="padding: 7px 20px;font-size:18px;margin:5px"/>
+  <td><input class="mbutton" id="btnP1" type="button" value="C-2" onclick="cr1_moveTo(2)" style="padding: 7px 20px;font-size:18px;margin:5px"/>
+  
+      </tr>
+    </table>
+
+
+<!-- #### CR2 switch #### !-->
+    <br>
+    
+    <table class="mtable" style="font-size:18px">
+      <tr>
+    	<th class="mtableheader" id="page_title_2" colspan="4">CR2 Switch</th>
       </tr>
       <tr>
 	<td colspan="4" style="vertical-align:center">
@@ -91,7 +332,7 @@ padding: 8px;
 	    <tr align="center">
 	      <td width="200">Current Position</td>
         <td width="200" style="font-weight:bold;color:green">
-          <div class="modbvalue" data-format="d" data-odb-path="/Equipment/CryoSwitch/Variables/CR_status">
+          <div class="modbvalue" data-format="d" data-odb-path="/Equipment/CryoSwitch/Variables/CR2_status">
           </div>
         </td>
 	    </tr>
@@ -99,19 +340,19 @@ padding: 8px;
 	</td>
       </tr>
       <tr>
-	<td><input class="mbutton" id="btnP0" type="button" value="C-1" onclick="moveTo(1)" style="padding: 7px 20px;font-size:18px;margin:5px"/>
-	<td><input class="mbutton" id="btnP1" type="button" value="C-2" onclick="moveTo(2)" style="padding: 7px 20px;font-size:18px;margin:5px"/>
+	<td><input class="mbutton" id="btnP0" type="button" value="C-1" onclick="cr2_moveTo(1)" style="padding: 7px 20px;font-size:18px;margin:5px"/>
+	<td><input class="mbutton" id="btnP1" type="button" value="C-2" onclick="cr2_moveTo(2)" style="padding: 7px 20px;font-size:18px;margin:5px"/>
 	
       </tr>
     </table>
 
 
-<!-- #### parte nuova #### !-->
+<!-- #### RT switch #### !-->
     <br>
 
     <table class="mtable" style="font-size:18px">
       <tr>
-        <th class="mtableheader" id="page_title_2" colspan="4">RT Switch</th>
+        <th class="mtableheader" id="page_title_3" colspan="4">RT Switch</th>
       </tr>
       <tr>
         <td colspan="4" style="vertical-align:center">
@@ -126,11 +367,137 @@ padding: 8px;
         </td>
       </tr>
       <tr>
-        <td><input class="mbutton" id="btnP2" type="button" value="C-1" onclick="moveTo2(1)" style="padding: 7px 20px;font-size:18px;margin:5px"/></td>
-        <td><input class="mbutton" id="btnP3" type="button" value="C-2" onclick="moveTo2(2)" style="padding: 7px 20px;font-size:18px;margin:5px"/></td>
+        <td><input class="mbutton" id="btnP2" type="button" value="C-1" onclick="rt1_moveTo(1)" style="padding: 7px 20px;font-size:18px;margin:5px"/></td>
+        <td><input class="mbutton" id="btnP3" type="button" value="C-2" onclick="rt1_moveTo(2)" style="padding: 7px 20px;font-size:18px;margin:5px"/></td>
       </tr>
     </table>
-  <!-- #### fine parte nuova #### !-->
+
+<!-- #### ZTRC-4SPDT-A18 rack switch #### !-->
+    <section class="rack-switch-panel" aria-labelledby="rack_switch_title">
+      <table class="mtable" style="font-size:18px; width:100%">
+        <tr>
+          <th class="mtableheader" id="rack_switch_title">ZTRC-4SPDT-A18</th>
+        </tr>
+      </table>
+
+      <svg viewBox="0 0 1000 230" role="img" aria-labelledby="rack_svg_title rack_svg_desc">
+        <title id="rack_svg_title">Pannello del cassetto Mini-Circuits ZTRC-4SPDT-A18</title>
+        <desc id="rack_svg_desc">Quattro switch SPDT indipendenti, ciascuno con porte SMA 1, C e 2. Il percorso blu indica il collegamento richiesto.</desc>
+
+        <rect class="rack-chassis" x="22" y="30" width="956" height="175" rx="7"></rect>
+        <path class="rack-ear" d="M22 48H7V187H22M978 48h15v139h-15"></path>
+        <circle class="rack-screw" cx="14" cy="68" r="4"></circle>
+        <circle class="rack-screw" cx="14" cy="169" r="4"></circle>
+        <circle class="rack-screw" cx="986" cy="68" r="4"></circle>
+        <circle class="rack-screw" cx="986" cy="169" r="4"></circle>
+        <text class="rack-svg-label" x="48" y="58">Mini-Circuits</text>
+        <text class="rack-svg-small" x="952" y="58" text-anchor="end">DC–18 GHz · 50 Ω</text>
+
+        <g transform="translate(165 0)">
+          <text class="rack-svg-label" x="0" y="88" text-anchor="middle">SW A</text>
+          <circle class="rack-led" data-switch="A" cx="0" cy="105" r="7"></circle>
+          <path class="rack-signal-path" data-switch="A" data-port="0" d="M0 153H-54"></path>
+          <path class="rack-signal-path" data-switch="A" data-port="1" d="M0 153H54"></path>
+          <text class="rack-svg-small" x="-54" y="133" text-anchor="middle">1</text>
+          <text class="rack-svg-small" x="0" y="133" text-anchor="middle">C</text>
+          <text class="rack-svg-small" x="54" y="133" text-anchor="middle">2</text>
+          <circle class="rack-connector-outer" cx="-54" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="-54" cy="153" r="5"></circle>
+          <circle class="rack-connector-outer" cx="0" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="0" cy="153" r="5"></circle>
+          <circle class="rack-connector-outer" cx="54" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="54" cy="153" r="5"></circle>
+        </g>
+
+        <g transform="translate(390 0)">
+          <path class="rack-divider" d="M-112 76V187"></path>
+          <text class="rack-svg-label" x="0" y="88" text-anchor="middle">SW B</text>
+          <circle class="rack-led" data-switch="B" cx="0" cy="105" r="7"></circle>
+          <path class="rack-signal-path" data-switch="B" data-port="0" d="M0 153H-54"></path>
+          <path class="rack-signal-path" data-switch="B" data-port="1" d="M0 153H54"></path>
+          <text class="rack-svg-small" x="-54" y="133" text-anchor="middle">1</text>
+          <text class="rack-svg-small" x="0" y="133" text-anchor="middle">C</text>
+          <text class="rack-svg-small" x="54" y="133" text-anchor="middle">2</text>
+          <circle class="rack-connector-outer" cx="-54" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="-54" cy="153" r="5"></circle>
+          <circle class="rack-connector-outer" cx="0" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="0" cy="153" r="5"></circle>
+          <circle class="rack-connector-outer" cx="54" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="54" cy="153" r="5"></circle>
+        </g>
+
+        <g transform="translate(615 0)">
+          <path class="rack-divider" d="M-112 76V187"></path>
+          <text class="rack-svg-label" x="0" y="88" text-anchor="middle">SW C</text>
+          <circle class="rack-led" data-switch="C" cx="0" cy="105" r="7"></circle>
+          <path class="rack-signal-path" data-switch="C" data-port="0" d="M0 153H-54"></path>
+          <path class="rack-signal-path" data-switch="C" data-port="1" d="M0 153H54"></path>
+          <text class="rack-svg-small" x="-54" y="133" text-anchor="middle">1</text>
+          <text class="rack-svg-small" x="0" y="133" text-anchor="middle">C</text>
+          <text class="rack-svg-small" x="54" y="133" text-anchor="middle">2</text>
+          <circle class="rack-connector-outer" cx="-54" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="-54" cy="153" r="5"></circle>
+          <circle class="rack-connector-outer" cx="0" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="0" cy="153" r="5"></circle>
+          <circle class="rack-connector-outer" cx="54" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="54" cy="153" r="5"></circle>
+        </g>
+
+        <g transform="translate(840 0)">
+          <path class="rack-divider" d="M-112 76V187"></path>
+          <text class="rack-svg-label" x="0" y="88" text-anchor="middle">SW D</text>
+          <circle class="rack-led" data-switch="D" cx="0" cy="105" r="7"></circle>
+          <path class="rack-signal-path" data-switch="D" data-port="0" d="M0 153H-54"></path>
+          <path class="rack-signal-path" data-switch="D" data-port="1" d="M0 153H54"></path>
+          <text class="rack-svg-small" x="-54" y="133" text-anchor="middle">1</text>
+          <text class="rack-svg-small" x="0" y="133" text-anchor="middle">C</text>
+          <text class="rack-svg-small" x="54" y="133" text-anchor="middle">2</text>
+          <circle class="rack-connector-outer" cx="-54" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="-54" cy="153" r="5"></circle>
+          <circle class="rack-connector-outer" cx="0" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="0" cy="153" r="5"></circle>
+          <circle class="rack-connector-outer" cx="54" cy="153" r="14"></circle><circle class="rack-connector-inner" cx="54" cy="153" r="5"></circle>
+        </g>
+      </svg>
+
+      <div class="rack-controls" aria-label="Comandi dei quattro switch">
+        <div class="rack-control" data-switch="A">
+          <strong>Switch A</strong>
+          <button class="mbutton" type="button" data-port="0" aria-pressed="false" onclick="rack_moveTo('A', 0)">C-1</button>
+          <button class="mbutton" type="button" data-port="1" aria-pressed="false" onclick="rack_moveTo('A', 1)">C-2</button>
+        </div>
+        <div class="rack-control" data-switch="B">
+          <strong>Switch B</strong>
+          <button class="mbutton" type="button" data-port="0" aria-pressed="false" onclick="rack_moveTo('B', 0)">C-1</button>
+          <button class="mbutton" type="button" data-port="1" aria-pressed="false" onclick="rack_moveTo('B', 1)">C-2</button>
+        </div>
+        <div class="rack-control" data-switch="C">
+          <strong>Switch C</strong>
+          <button class="mbutton" type="button" data-port="0" aria-pressed="false" onclick="rack_moveTo('C', 0)">C-1</button>
+          <button class="mbutton" type="button" data-port="1" aria-pressed="false" onclick="rack_moveTo('C', 1)">C-2</button>
+        </div>
+        <div class="rack-control" data-switch="D">
+          <strong>Switch D</strong>
+          <button class="mbutton" type="button" data-port="0" aria-pressed="false" onclick="rack_moveTo('D', 0)">C-1</button>
+          <button class="mbutton" type="button" data-port="1" aria-pressed="false" onclick="rack_moveTo('D', 1)">C-2</button>
+        </div>
+      </div>
+
+      <h3 class="rack-presets-title">Presets</h3>
+      <div class="rack-presets" aria-label="Combinazioni automatiche degli switch">
+        <div class="rack-preset">
+          <strong>Switch to S11cav</strong>
+          <button class="mbutton" type="button" data-preset="S11cav" aria-pressed="false" onclick="rack_switchPreset('S11cav')">Set</button>
+        </div>
+        <div class="rack-preset">
+          <strong>Switch to S22cav</strong>
+          <button class="mbutton" type="button" data-preset="S22cav" aria-pressed="false" onclick="rack_switchPreset('S22cav')">Set</button>
+        </div>
+        <div class="rack-preset">
+          <strong>Switch to S21cav</strong>
+          <button class="mbutton" type="button" data-preset="S21cav" aria-pressed="false" onclick="rack_switchPreset('S21cav')">Set</button>
+        </div>
+        <div class="rack-preset">
+          <strong>Switch to S12cav</strong>
+          <button class="mbutton" type="button" data-preset="S12cav" aria-pressed="false" onclick="rack_switchPreset('S12cav')">Set</button>
+        </div>
+      </div>
+
+      <div id="rack_command_status" class="rack-status" aria-live="polite">Stato iniziale non letto; selezionare una posizione.</div>
+      <div class="rack-legend">
+        <span class="rack-legend-item"><span class="rack-legend-dot c1"></span>LED verde: C-1</span>
+        <span class="rack-legend-item"><span class="rack-legend-dot c2"></span>LED arancio: C-2</span>
+      </div>
+    </section>
 
     
   </div>

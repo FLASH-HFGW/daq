@@ -43,6 +43,21 @@ input[type=number][disabled] {
   margin-bottom:25px;
 }
 
+.autoDetectBox {
+  font-size:18px;
+  margin-bottom:25px;
+}
+
+.autoDetectStatus {
+  font-weight: bold;
+  color: #174a73;
+}
+
+.autoDetectNote {
+  font-size: 14px;
+  color: #555;
+}
+
 .saBox {
   font-size:18px;
   margin-bottom:25px;
@@ -79,6 +94,12 @@ const SPAN_PATH    = VNA_BASE + "Span_Hz";
 const POWER_PATH   = VNA_BASE + "Power_dBm";
 const DESCRIPTION_PATH = "/Equipment/VNA/vnaCalib/Description";
 
+const MODE1_FREQ_PATH = "/Equipment/VNA/vnaCalib/freq_mode1";
+const MODE2_FREQ_PATH = "/Equipment/VNA/vnaCalib/freq_mode2";
+const MODE3_FREQ_PATH = "/Equipment/VNA/vnaCalib/freq_mode3";
+const AUTO_DETECT_REQUEST_PATH = "/Equipment/VNA/vnaCalib/Auto_detect";
+const AUTO_DETECT_STATUS_PATH = "/Equipment/VNA/vnaCalib/Auto_detect_status";
+
 const HAS_CHANGED_PATH  = VNA_BASE + "hasChanged";
 const CALIB_STATE_PATH  = VNA_BASE + "Calib_state";
 const START_CALIB_PATH  = VNA_BASE + "Start_Calib";
@@ -105,10 +126,12 @@ window.onload = function() {
 
   mhttpd_init("Calibration");
 
+  readAutoDetectValues();
   readVnaValues();
   readSaValues();
 
   window.setInterval(function() {
+    readAutoDetectValues();
     readVnaValues();
     readSaValues();
   }, 1000);
@@ -136,6 +159,89 @@ function writeParameter(path, value, hasChangedPath, readbackFunction) {
 
   });
 
+}
+
+
+/* =========================
+   VNA mode auto-detect
+   ========================= */
+
+function formatModeFrequency(odbValue) {
+  let frequencyHz = Number(odbValue);
+
+  if (!Number.isFinite(frequencyHz) || frequencyHz <= 0) {
+    return "---";
+  }
+
+  return (frequencyHz / 1e9).toFixed(9);
+}
+
+function readAutoDetectValues() {
+  let paths = [
+    MODE1_FREQ_PATH,
+    MODE2_FREQ_PATH,
+    MODE3_FREQ_PATH,
+    AUTO_DETECT_REQUEST_PATH,
+    AUTO_DETECT_STATUS_PATH
+  ];
+
+  return mjsonrpc_db_get_values(paths).then(function(rpc) {
+    if (!rpc || !rpc.result || !rpc.result.data) {
+      throw new Error("Invalid MIDAS RPC response");
+    }
+
+    let data = rpc.result.data;
+    let requestActive = (
+      data[3] === true ||
+      data[3] === 1 ||
+      String(data[3]).toLowerCase() === "true"
+    );
+    let status = String(data[4] || "Unavailable").trim();
+    let autoDetectButton = document.getElementById("btnAutoDetectModes");
+
+    document.getElementById("mode1FreqDisplay").innerText =
+      formatModeFrequency(data[0]);
+    document.getElementById("mode2FreqDisplay").innerText =
+      formatModeFrequency(data[1]);
+    document.getElementById("mode3FreqDisplay").innerText =
+      formatModeFrequency(data[2]);
+    document.getElementById("autoDetectStatusDisplay").innerText = status;
+
+    autoDetectButton.disabled = requestActive;
+    autoDetectButton.value = requestActive ? "RUNNING..." : "Auto Detect";
+
+  }).catch(function(error) {
+    console.error(error);
+    document.getElementById("autoDetectStatusDisplay").innerText =
+      "Calibration frontend unavailable";
+  });
+}
+
+function startModeAutoDetect() {
+  let confirmed = window.confirm(
+    "Start automatic mode detection? Make sure the signal path is set to S21cav."
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  document.getElementById("btnAutoDetectModes").disabled = true;
+  document.getElementById("autoDetectStatusDisplay").innerText =
+    "Request sent";
+
+  return mjsonrpc_db_paste(
+    [AUTO_DETECT_REQUEST_PATH],
+    [true]
+  ).then(function() {
+    console.log("VNA mode auto-detect requested");
+    readAutoDetectValues();
+
+  }).catch(function(error) {
+    console.error(error);
+    document.getElementById("btnAutoDetectModes").disabled = false;
+    mjsonrpc_error_alert(error);
+  });
 }
 
 
@@ -370,6 +476,71 @@ function saveSaCalibration() {
 <div id="msidenav"></div>
 
 <div id="mmain">
+
+<!-- =========================
+     VNA mode auto-detect box
+     ========================= -->
+
+<table class="mtable autoDetectBox">
+
+<tr>
+  <th class="mtableheader" colspan="4">VNA Mode Auto Detect</th>
+</tr>
+
+<tr align="center">
+  <th width="220">Mode</th>
+  <th width="220">Frequency</th>
+  <th width="120">Unit</th>
+  <th width="220">Command</th>
+</tr>
+
+<tr align="center">
+  <td>Mode 1</td>
+  <td style="font-weight:bold;color:green">
+    <span id="mode1FreqDisplay">---</span>
+  </td>
+  <td>GHz</td>
+  <td rowspan="3" style="vertical-align:middle">
+    <input class="mbutton"
+           id="btnAutoDetectModes"
+           type="button"
+           value="Auto Detect"
+           onclick="startModeAutoDetect()"
+           style="padding:10px 25px;font-size:18px;margin:8px">
+  </td>
+</tr>
+
+<tr align="center">
+  <td>Mode 2</td>
+  <td style="font-weight:bold;color:green">
+    <span id="mode2FreqDisplay">---</span>
+  </td>
+  <td>GHz</td>
+</tr>
+
+<tr align="center">
+  <td>Mode 3</td>
+  <td style="font-weight:bold;color:green">
+    <span id="mode3FreqDisplay">---</span>
+  </td>
+  <td>GHz</td>
+</tr>
+
+<tr align="center">
+  <td colspan="4">
+    Status:
+    <span id="autoDetectStatusDisplay" class="autoDetectStatus">---</span>
+  </td>
+</tr>
+
+<tr align="center">
+  <td colspan="4" class="autoDetectNote">
+    Before starting, select the S21cav signal path. The procedure uses
+    S21, MLOG, 2001 points, IFBW 300 Hz and power -47 dBm.
+  </td>
+</tr>
+
+</table>
 
 <!-- =========================
      VNA box

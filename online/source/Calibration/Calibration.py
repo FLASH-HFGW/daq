@@ -13,6 +13,24 @@ from datetime import datetime
 from urllib.request import urlopen
 import sys
 
+AUTO_DETECT_REQUEST_PATH = "/Equipment/VNA/vnaCalib/Auto_detect"
+AUTO_DETECT_STATUS_PATH = "/Equipment/VNA/vnaCalib/Auto_detect_status"
+MODE_FREQUENCY_PATHS = [
+    "/Equipment/VNA/vnaCalib/freq_mode1",
+    "/Equipment/VNA/vnaCalib/freq_mode2",
+    "/Equipment/VNA/vnaCalib/freq_mode3",
+]
+
+AUTO_DETECT_COARSE_SPAN_HZ = 10e6
+AUTO_DETECT_FINE_SPAN_HZ = 2e6
+AUTO_DETECT_MODE2_OFFSET_HZ = 45e6
+AUTO_DETECT_MODE3_OFFSET_HZ = 104e6
+AUTO_DETECT_NPOINTS = 2001
+AUTO_DETECT_IFBW_HZ = 300
+AUTO_DETECT_POWER_DBM = -47
+AUTO_DETECT_VISA_TIMEOUT_MS = 120000
+AUTO_DETECT_SWEEP_MARGIN_S = 0.25
+
 ########################################
 # Define a function to send an HTTP command to the switch rack and get the result
 ########################################
@@ -80,6 +98,7 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
         
         #### apro comunicazione strumenti
         self.vna = coldlib.VNA( modules['VNA-ZNB'] )
+        self.vna.inst.timeout = AUTO_DETECT_VISA_TIMEOUT_MS
 
         #variabile si/no se è stato cambiato qualche parametro. False = NO, True = YES
         hasChanged : bool = False
@@ -100,14 +119,238 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Span_Hz"), span)
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Power_dBm"), power)
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"), False)
-        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Sart_Calib"), False)
+        client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Start_Calib"), False)
         client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Calib_state"), str('0'))
+        client.odb_set(AUTO_DETECT_REQUEST_PATH, False)
+        client.odb_set(AUTO_DETECT_STATUS_PATH, "Idle")
         
         # You can set the status of the equipment (appears in the midas status page)
         self.set_status("VNA Initialized")
         
+    def _set_auto_detect_status(self, status):
+        self.client.odb_set(AUTO_DETECT_STATUS_PATH, status)
+        self.set_status("Auto Detect: {:}".format(status))
+
+    def _run_single_vna_sweep(self):
+        sweep_time_s = float(self.vna.inst.query(":SENS1:SWE:TIME?"))
+
+        if not np.isfinite(sweep_time_s) or sweep_time_s <= 0:
+            raise RuntimeError(
+                "VNA returned an invalid sweep time: {:}".format(sweep_time_s)
+            )
+
+        # Use the same sequence as the established calibration code.  *OPC?
+        # is deliberately avoided here: if the analyzer is waiting for a
+        # trigger, that query blocks until the VISA timeout.  Trigger source
+        # IMM is selected by _run_auto_detect() before reaching this method.
+        self.vna.inst.write(":INIT1")
+        time.sleep(
+            sweep_time_s
+            + max(AUTO_DETECT_SWEEP_MARGIN_S, 0.1 * sweep_time_s)
+        )
+
+    def _move_marker_to_absolute_maximum(self):
+        """
+        Create marker 1, search the absolute maximum of the active trace and
+        return its stimulus value in Hz.
+
+        Tracking is deliberately disabled: this is a deterministic one-shot
+        search performed after each completed sweep.
+        """
+        self.vna.inst.write(":CALC1:MARK1:STAT ON")
+        self.vna.inst.write(":CALC1:MARK1:FUNC:DOM:USER:RANG 0")
+        self.vna.inst.write(":CALC1:MARK1:FUNC:EXEC MAX")
+        self.vna.inst.write(":CALC1:MARK1:SEAR:TRAC OFF")
+
+        marker_frequency_hz = float(
+            self.vna.inst.query(":CALC1:MARK1:X?").strip()
+        )
+
+        if not np.isfinite(marker_frequency_hz):
+            raise RuntimeError("VNA marker returned a non-finite frequency")
+
+        return marker_frequency_hz
+
+    def _find_mode_frequency(self, mode_number, expected_frequency_hz):
+        center_hz = float(expected_frequency_hz)
+
+        for stage_name, span_hz in (
+            ("coarse", AUTO_DETECT_COARSE_SPAN_HZ),
+            ("fine", AUTO_DETECT_FINE_SPAN_HZ),
+        ):
+            self._set_auto_detect_status(
+                "Mode {:} {:}".format(mode_number, stage_name)
+            )
+
+            self.vna.center(center_hz)
+            self.vna.span(span_hz)
+            self._run_single_vna_sweep()
+
+            marker_frequency_hz = self._move_marker_to_absolute_maximum()
+            search_min_hz = center_hz - span_hz / 2
+            search_max_hz = center_hz + span_hz / 2
+
+            if not search_min_hz <= marker_frequency_hz <= search_max_hz:
+                raise RuntimeError(
+                    "mode {:} marker is outside the {:} search span".format(
+                        mode_number, stage_name
+                    )
+                )
+
+            center_hz = marker_frequency_hz
+
+        self.vna.center(center_hz)
+        self.vna.span(AUTO_DETECT_FINE_SPAN_HZ)
+        return center_hz
+
+    def _capture_vna_settings(self):
+        return {
+            "center_hz": float(self.vna.inst.query(":SENS1:FREQ:CENT?")),
+            "span_hz": float(self.vna.inst.query(":SENS1:FREQ:SPAN?")),
+            "npoints": int(float(self.vna.inst.query(":SENS1:SWE:POIN?"))),
+            "ifbw_hz": float(self.vna.inst.query(":SENS1:BWID?")),
+            "power_dbm": float(self.vna.inst.query(":SOUR1:POW?")),
+            "format": self.vna.inst.query(":CALC1:FORM?").strip(),
+            "output_on": float(self.vna.inst.query(":OUTP?")) >= 0.5,
+            "continuous_sweep": (
+                float(self.vna.inst.query(":INIT1:CONT?")) >= 0.5
+            ),
+            "trigger_source": self.vna.inst.query(
+                ":TRIGger:SOURce?"
+            ).strip(),
+            "sweep_time_auto": (
+                float(self.vna.inst.query(":SENS1:SWE:TIME:AUTO?")) >= 0.5
+            ),
+        }
+
+    def _restore_vna_settings_after_error(self, settings):
+        self.vna.center(settings["center_hz"])
+        self.vna.span(settings["span_hz"])
+        self.vna.Npoints(npoints=settings["npoints"])
+        self.vna.ifbw(settings["ifbw_hz"])
+        self.vna.power(settings["power_dbm"])
+        self.vna.format(format=settings["format"])
+
+    def _run_auto_detect(self):
+        previous_mode1_hz = float(self.client.odb_get(MODE_FREQUENCY_PATHS[0]))
+
+        if not np.isfinite(previous_mode1_hz) or previous_mode1_hz <= 0:
+            raise ValueError(
+                "freq_mode1 must contain the previous positive frequency in Hz"
+            )
+
+        previous_settings = self._capture_vna_settings()
+        auto_detect_completed = False
+
+        try:
+            self.vna.meas_param_znb(par="S21")
+            self.vna.format(format="MLOG")
+            self.vna.Npoints(npoints=AUTO_DETECT_NPOINTS)
+            self.vna.ifbw(AUTO_DETECT_IFBW_HZ)
+            self.vna.power(AUTO_DETECT_POWER_DBM)
+            self.vna.inst.write(":SENS1:SWE:TYPE LIN")
+            self.vna.inst.write(":SENS1:SWE:TIME:AUTO ON")
+            self.vna.inst.write(":TRIGger:SOURce IMMediate")
+            self.vna.inst.write(":INIT1:CONT OFF")
+            self.vna.output(1)
+
+            mode1_hz = self._find_mode_frequency(1, previous_mode1_hz)
+            mode2_hz = self._find_mode_frequency(
+                2, mode1_hz + AUTO_DETECT_MODE2_OFFSET_HZ
+            )
+            mode3_hz = self._find_mode_frequency(
+                3, mode1_hz + AUTO_DETECT_MODE3_OFFSET_HZ
+            )
+
+            for odb_path, frequency_hz in zip(
+                MODE_FREQUENCY_PATHS,
+                (mode1_hz, mode2_hz, mode3_hz),
+            ):
+                self.client.odb_set(odb_path, frequency_hz)
+
+            self.client.odb_set(
+                "/Equipment/{:}/Variables/Scatter".format(self.equip_name),
+                "S21",
+            )
+            self.client.odb_set(
+                "/Equipment/{:}/Variables/Format".format(self.equip_name),
+                "MLOG",
+            )
+            self.client.odb_set(
+                "/Equipment/{:}/Variables/Npoints".format(self.equip_name),
+                AUTO_DETECT_NPOINTS,
+            )
+            self.client.odb_set(
+                "/Equipment/{:}/Variables/IFBW_Hz".format(self.equip_name),
+                AUTO_DETECT_IFBW_HZ,
+            )
+            self.client.odb_set(
+                "/Equipment/{:}/Variables/Center_Hz".format(self.equip_name),
+                mode3_hz,
+            )
+            self.client.odb_set(
+                "/Equipment/{:}/Variables/Span_Hz".format(self.equip_name),
+                AUTO_DETECT_FINE_SPAN_HZ,
+            )
+            self.client.odb_set(
+                "/Equipment/{:}/Variables/Power_dBm".format(self.equip_name),
+                AUTO_DETECT_POWER_DBM,
+            )
+            self.client.odb_set(
+                "/Equipment/{:}/Variables/hasChanged".format(self.equip_name),
+                False,
+            )
+
+            auto_detect_completed = True
+
+        finally:
+            try:
+                self.vna.inst.write(":CALC1:MARK1:SEAR:TRAC OFF")
+            except Exception:
+                pass
+
+            if not auto_detect_completed:
+                self._restore_vna_settings_after_error(previous_settings)
+
+            self.vna.inst.write(
+                ":TRIGger:SOURce {:}".format(
+                    previous_settings["trigger_source"]
+                )
+            )
+            self.vna.inst.write(
+                ":SENS1:SWE:TIME:AUTO {:}".format(
+                    "ON" if previous_settings["sweep_time_auto"] else "OFF"
+                )
+            )
+            self.vna.inst.write(
+                ":INIT1:CONT {:}".format(
+                    "ON" if previous_settings["continuous_sweep"] else "OFF"
+                )
+            )
+            self.vna.output(1 if previous_settings["output_on"] else 0)
+
+        self._set_auto_detect_status("Completed")
+
         
     def readout_func(self):
+
+        auto_detect_requested = self.client.odb_get(
+            AUTO_DETECT_REQUEST_PATH
+        )
+
+        if auto_detect_requested:
+            try:
+                self._run_auto_detect()
+                self.client.msg("VNA mode auto-detect completed")
+            except Exception as error:
+                self._set_auto_detect_status("ERROR")
+                self.client.msg(
+                    "VNA mode auto-detect failed: {:}".format(error)
+                )
+            finally:
+                self.client.odb_set(AUTO_DETECT_REQUEST_PATH, False)
+
+            return None
 
         hasChanged = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"))
 
@@ -159,7 +402,7 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     data = np.c_[freq, y1, y2]
                     now = datetime.now()
                     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-                    np.savetxt('/home/cold/data/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
+                    np.savetxt('/home/cold/data/calib/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
 
                     #save on ODB real and imag data of selected scattering parameter
                     self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataReal".format(self.equip_name, calibState), y1)
@@ -182,7 +425,7 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     data = np.c_[freq, y1, y2]
                     now = datetime.now()
                     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-                    np.savetxt('/home/cold/data/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
+                    np.savetxt('/home/cold/data/calib/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
 
                     #save on ODB real and imag data of selected scattering parameter
                     self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataReal".format(self.equip_name, calibState), y1)
@@ -205,7 +448,7 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     data = np.c_[freq, y1, y2]
                     now = datetime.now()
                     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-                    np.savetxt('/home/cold/data/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
+                    np.savetxt('/home/cold/data/calib/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
 
                     #save on ODB real and imag data of selected scattering parameter
                     self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataReal".format(self.equip_name, calibState), y1)
@@ -228,7 +471,7 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     data = np.c_[freq, y1, y2]
                     now = datetime.now()
                     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-                    np.savetxt('/home/cold/data/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
+                    np.savetxt('/home/cold/data/calib/{:}_{:}_{:}.txt'.format(calibState, description, timestamp), data)
 
                     #save on ODB real and imag data of selected scattering parameter
                     self.client.odb_set("/Equipment/{:}/vnaCalib/{:}_dataReal".format(self.equip_name, calibState), y1)
@@ -302,7 +545,7 @@ class MySAEquipment(midas.frontend.EquipmentBase):
         self.sa.set_trace_mode(trace_number=1,mode='AVER')
         
         #define save data path
-        self.savePath = '/home/cold/data/spectrumAnalyzer'
+        self.savePath = '/home/cold/data/calib/spectrumAnalyzer'
 
         #variabile si/no se è stato cambiato qualche parametro. False = NO, True = YES
         hasChanged : bool = False
@@ -467,4 +710,3 @@ if __name__ == "__main__":
     # and call run() on it.
     with MyFrontend() as my_fe:
         my_fe.run()
-

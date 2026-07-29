@@ -54,6 +54,17 @@ input[type=number][disabled]{
   white-space: nowrap;
 }
 
+.frequencyCommandCell {
+  min-width: 180px;
+  white-space: nowrap;
+}
+
+.frequencyCommandButton {
+  padding: 7px 14px;
+  font-size: 18px;
+  margin: 5px 2px;
+}
+
 .statusText {
   font-size: 13px;
   color: #555;
@@ -157,6 +168,12 @@ const TELEDYNE_CH2_FREQ_PATH = "/Equipment/LocalOscill/Variables/freq Teled Ch2"
 const TELEDYNE_CH2_VPP_PATH  = "/Equipment/LocalOscill/Variables/Vpp Teled Ch2";
 const TELEDYNE_CH2_OUTPUT_PATH = "/Equipment/LocalOscill/Variables/onoff Teled Ch2";
 const TELEDYNE_ROSC_PATH     = "/Equipment/LocalOscill/Variables/Ref Oscill Teled";
+
+const MODE1_FREQ_PATH        = "/Equipment/VNA/vnaCalib/freq_mode1";
+const MODE2_FREQ_PATH        = "/Equipment/VNA/vnaCalib/freq_mode2";
+const MODE3_FREQ_PATH        = "/Equipment/VNA/vnaCalib/freq_mode3";
+
+const LO_OFFSET_HZ           = 1.25e6;
 
 /*
   Global user-command flag.
@@ -700,6 +717,113 @@ function setTeledyneCh2Vpp() {
   setScaledOdbFloat("teledyneCh2VppSetValue", TELEDYNE_CH2_VPP_PATH, "Teledyne CH2 Vpp", 1.0);
 }
 
+function readAutomaticLoFrequenciesHz() {
+  /*
+    VNA mode frequencies and LocalOscill frequency variables are stored in Hz.
+    The page converts the calculated values only when filling the user-facing
+    GHz/MHz input fields.
+  */
+  var modeFrequencyPaths = [
+    MODE1_FREQ_PATH,
+    MODE2_FREQ_PATH,
+    MODE3_FREQ_PATH
+  ];
+
+  return mjsonrpc_db_get_values(modeFrequencyPaths).then(function(rpc) {
+    if (!rpc || !rpc.result || !rpc.result.data) {
+      throw new Error("invalid MIDAS RPC response");
+    }
+
+    var mode1Hz = extractNumericValue(rpc.result.data[0]);
+    var mode2Hz = extractNumericValue(rpc.result.data[1]);
+    var mode3Hz = extractNumericValue(rpc.result.data[2]);
+
+    if (!Number.isFinite(mode1Hz) || mode1Hz <= 0 ||
+        !Number.isFinite(mode2Hz) || mode2Hz <= 0 ||
+        !Number.isFinite(mode3Hz) || mode3Hz <= 0) {
+      throw new Error(
+        "freq_mode1, freq_mode2 and freq_mode3 must contain positive frequencies in Hz"
+      );
+    }
+
+    var rsLoHz = Math.round(mode1Hz - LO_OFFSET_HZ);
+    var teledyneCh1Hz = Math.round(mode2Hz - rsLoHz - LO_OFFSET_HZ);
+    var teledyneCh2Hz = Math.round(mode3Hz - rsLoHz - LO_OFFSET_HZ);
+
+    if (rsLoHz <= 0 || teledyneCh1Hz <= 0 || teledyneCh2Hz <= 0) {
+      throw new Error("the calculated LO frequencies are not positive");
+    }
+
+    return {
+      rsLoHz: rsLoHz,
+      teledyneCh1Hz: teledyneCh1Hz,
+      teledyneCh2Hz: teledyneCh2Hz
+    };
+  });
+}
+
+function setAutomaticLoFrequency(target) {
+  document.getElementById("writeStatus").innerText =
+    "Reading calibrated mode frequencies from ODB...";
+
+  return readAutomaticLoFrequenciesHz().then(function(frequencies) {
+    var targetConfig = {
+      rsLo: {
+        valueHz: frequencies.rsLoHz,
+        inputId: "rsLoFreqSetValue",
+        inputValue: frequencies.rsLoHz / 1e9,
+        inputDigits: 9,
+        odbPath: RS_LO_FREQ_PATH,
+        parameterName: "RS LO automatic frequency"
+      },
+      teledyneCh1: {
+        valueHz: frequencies.teledyneCh1Hz,
+        inputId: "teledyneCh1FreqSetValue",
+        inputValue: frequencies.teledyneCh1Hz / 1e6,
+        inputDigits: 6,
+        odbPath: TELEDYNE_CH1_FREQ_PATH,
+        parameterName: "Teledyne CH1 automatic frequency"
+      },
+      teledyneCh2: {
+        valueHz: frequencies.teledyneCh2Hz,
+        inputId: "teledyneCh2FreqSetValue",
+        inputValue: frequencies.teledyneCh2Hz / 1e6,
+        inputDigits: 6,
+        odbPath: TELEDYNE_CH2_FREQ_PATH,
+        parameterName: "Teledyne CH2 automatic frequency"
+      }
+    };
+
+    var config = targetConfig[target];
+
+    if (!config) {
+      throw new Error("unknown automatic LO target");
+    }
+
+    document.getElementById(config.inputId).value =
+      config.inputValue.toFixed(config.inputDigits);
+
+    writeOdbFloat(config.odbPath, config.valueHz, config.parameterName);
+
+  }).catch(function(error) {
+    var message = "Automatic LO frequency calculation failed: " + error.message;
+    document.getElementById("writeStatus").innerText = message;
+    alert(message);
+  });
+}
+
+function setAutomaticRsLoFrequency() {
+  setAutomaticLoFrequency("rsLo");
+}
+
+function setAutomaticTeledyneCh1Frequency() {
+  setAutomaticLoFrequency("teledyneCh1");
+}
+
+function setAutomaticTeledyneCh2Frequency() {
+  setAutomaticLoFrequency("teledyneCh2");
+}
+
 function setOutputState(odbPath, parameterName, state) {
   /*
     OFF is written as integer 0 and ON as integer 1.
@@ -779,7 +903,7 @@ function setTeledyneCh2Off() {
         <th width="220">Current value</th>
         <th width="120">Unit</th>
         <th width="220">Set value</th>
-        <th width="120">Command</th>
+        <th width="180">Command</th>
       </tr>
 
       <tr align="center">
@@ -787,7 +911,10 @@ function setTeledyneCh2Off() {
         <td style="font-weight:bold;color:green"><span id="rsLoFreqGHzDisplay">---</span></td>
         <td>GHz</td>
         <td class="setcell"><input id="rsLoFreqSetValue" type="number" step="any" placeholder="Frequency [GHz]"></td>
-        <td><input class="mbutton" id="btnRsLoSetFreq" type="button" value="SET" onclick="setRsLoFrequency()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+        <td class="frequencyCommandCell">
+          <input class="mbutton frequencyCommandButton" id="btnRsLoSetFreq" type="button" value="SET" onclick="setRsLoFrequency()">
+          <input class="mbutton frequencyCommandButton" id="btnRsLoAutoFreq" type="button" value="AUTO" onclick="setAutomaticRsLoFrequency()" title="Calculate from freq_mode1">
+        </td>
       </tr>
 
       <tr align="center">
@@ -835,7 +962,7 @@ function setTeledyneCh2Off() {
         <th width="220">Current value</th>
         <th width="120">Unit</th>
         <th width="220">Set value</th>
-        <th width="120">Command</th>
+        <th width="180">Command</th>
       </tr>
 
       <tr align="center">
@@ -843,7 +970,10 @@ function setTeledyneCh2Off() {
         <td style="font-weight:bold;color:green"><span id="teledyneCh1FreqMHzDisplay">---</span></td>
         <td>MHz</td>
         <td class="setcell"><input id="teledyneCh1FreqSetValue" type="number" step="any" placeholder="Frequency [MHz]"></td>
-        <td><input class="mbutton" id="btnTeledyneCh1SetFreq" type="button" value="SET" onclick="setTeledyneCh1Frequency()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+        <td class="frequencyCommandCell">
+          <input class="mbutton frequencyCommandButton" id="btnTeledyneCh1SetFreq" type="button" value="SET" onclick="setTeledyneCh1Frequency()">
+          <input class="mbutton frequencyCommandButton" id="btnTeledyneCh1AutoFreq" type="button" value="AUTO" onclick="setAutomaticTeledyneCh1Frequency()" title="Calculate from freq_mode1 and freq_mode2">
+        </td>
       </tr>
 
       <tr align="center">
@@ -890,7 +1020,7 @@ function setTeledyneCh2Off() {
         <th width="220">Current value</th>
         <th width="120">Unit</th>
         <th width="220">Set value</th>
-        <th width="120">Command</th>
+        <th width="180">Command</th>
       </tr>
 
       <tr align="center">
@@ -898,7 +1028,10 @@ function setTeledyneCh2Off() {
         <td style="font-weight:bold;color:green"><span id="teledyneCh2FreqMHzDisplay">---</span></td>
         <td>MHz</td>
         <td class="setcell"><input id="teledyneCh2FreqSetValue" type="number" step="any" placeholder="Frequency [MHz]"></td>
-        <td><input class="mbutton" id="btnTeledyneCh2SetFreq" type="button" value="SET" onclick="setTeledyneCh2Frequency()" style="padding: 7px 20px;font-size:18px;margin:5px"></td>
+        <td class="frequencyCommandCell">
+          <input class="mbutton frequencyCommandButton" id="btnTeledyneCh2SetFreq" type="button" value="SET" onclick="setTeledyneCh2Frequency()">
+          <input class="mbutton frequencyCommandButton" id="btnTeledyneCh2AutoFreq" type="button" value="AUTO" onclick="setAutomaticTeledyneCh2Frequency()" title="Calculate from freq_mode1 and freq_mode3">
+        </td>
       </tr>
 
       <tr align="center">

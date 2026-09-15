@@ -3,7 +3,7 @@ import midas
 import midas.frontend
 import midas.event
 import numpy as np
-import os
+import os, re, glob
 import json
 from pyftdi import gpio
 import ColdLibraryv3 as coldlib
@@ -89,7 +89,7 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
         default_common.buffer_name = "SYSTEM"
         default_common.trigger_mask = 0
         default_common.event_id = 6
-        default_common.period_ms = 1000
+        default_common.period_ms = 100
         default_common.read_when = midas.RO_ALWAYS
         default_common.log_history = 0
 
@@ -352,7 +352,35 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
 
             return None
 
+
         hasChanged = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"))
+        twpaCalib = self.client.odb_get("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name,"twpaCalib"))
+
+        #executes twpa working point calibration
+        if twpaCalib == True:
+            #start1= time.time()
+            #print('start',start1)
+
+            self.vna.output(1)
+            self.vna.inst.write(':INIT1')
+            time.sleep(0.04)
+            #retrieve data from VNA sweep
+            y1, y2 = self.vna.read_znb()
+
+            self.client.odb_set("/Equipment/LocalOscill/twpaCalib/{:}".format("Max_S21"), y1)
+
+            filepathname = self.client.odb_get("/Equipment/LocalOscill/twpaCalib/{:}".format("File_path_name"))
+            f = open(filepathname, 'a')
+            if f is not None:
+                f.write(f"{float(y1)}\n")
+            else:
+                self.client.msg("ERROR!! twpaPumpMap_LO file not found. Cannot save twpaCalib data.")
+
+            twpaCalib = False
+            self.client.odb_set("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "twpaCalib"), twpaCalib)
+
+            #stop1 = time.time()
+            #print('has changed time tot time',stop1-start1)
 
         if hasChanged == True:
             Get_HTTP_Result("SETD=0")   # Set switch D
@@ -376,10 +404,28 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
             self.vna.Npoints(npoints=Npoints)
             self.vna.power(power)
 
+            self.vna.sweep_time_auto(1)
+            self.vna.trigger_src('IMM')
+            self.vna.trigger_mode(mode='CONT', state='OFF')
+
+
+            '''
+                #data = np.c_[freq, y1, y2]
+                last_twpaMap = max(glob.glob("/home/cold/data/calib/twpaPumpMap_LO_*.txt"), key=os.path.getmtime)
+                if last_twpaMap is not None:
+                    last_twpaMap_time = re.search(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", os.path.basename(last_twpaMap)).group()
+                    savefile = "/home/cold/data/calib/twpaCalib_{:}_{:}.txt".format(self.equip_name, last_twpaMap_time)
+                    with open(savefile, 'a') as f:
+                        f.write(f"{float(y1)}\n")
+                else:
+                    self.client.msg("twpaPumpMap_LO file not found. Cannot save twpaCalib data.")
+
+                self.client.odb_set("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "twpaCalib"), False)
+            '''
+
+
+            #starts calibration of scattering parameters
             if start_calib:
-                self.vna.sweep_time_auto(1)
-                self.vna.trigger_src('IMM')
-                self.vna.trigger_mode(mode='CONT', state='OFF')
 
                 calibState = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Calib_state"))
                 description = self.client.odb_get("/Equipment/{:}/vnaCalib/{:}".format(self.equip_name, "Description"))
@@ -395,7 +441,7 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     self.vna.format(format='POL')
                     self.vna.output(1)
                     self.vna.inst.write(':INIT1')
-                    time.sleep(0.1)
+                    time.sleep(0.05)
                     #retrieve data from VNA sweep
                     y1, y2 = self.vna.read_znb()
                     self.vna.autoscale(trace=1)
@@ -441,7 +487,7 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     self.vna.format(format='POL')
                     self.vna.output(1)
                     self.vna.inst.write(':INIT1')
-                    time.sleep(0.1)
+                    time.sleep(0.05)
                     #retrieve data from VNA sweep
                     y1, y2 = self.vna.read_znb()
                     self.vna.autoscale(trace=1)
@@ -464,7 +510,7 @@ class MyVNAEquipment(midas.frontend.EquipmentBase):
                     self.vna.format(format='POL')
                     self.vna.output(1)
                     self.vna.inst.write(':INIT1')
-                    time.sleep(0.1)
+                    time.sleep(0.05)
                     #retrieve data from VNA sweep
                     y1, y2 = self.vna.read_znb()
                     self.vna.autoscale(trace=1)
@@ -697,10 +743,7 @@ class MyFrontend(midas.frontend.FrontendBase):
         return midas.status_codes["SUCCESS"]
     
     def frontend_exit(self):
-        """
-        Most people won't need to define this function, but you can use
-        it for final cleanup if needed.
-        """
+        
         self.equipment['VNA'].vna.close()
         self.equipment['SA'].sa.close()
         print("Goodbye from user code!")

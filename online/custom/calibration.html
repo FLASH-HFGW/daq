@@ -353,14 +353,34 @@ function startCalibration(calibState) {
 
 function saveDescription()
 {
-    let text = document.getElementById("descriptionValue").value;
+    let mode = document.getElementById("descriptionValue").value;
+    let modeFrequencyPaths = {
+      "Mode1": MODE1_FREQ_PATH,
+      "Mode2": MODE2_FREQ_PATH,
+      "Mode3": MODE3_FREQ_PATH
+    };
+    let frequencyPath = modeFrequencyPaths[mode];
 
-    mjsonrpc_db_paste(
-        [DESCRIPTION_PATH],
-        [text]
-    ).catch(function(error) {
-        console.error(error);
-        mjsonrpc_error_alert(error);
+    if (!frequencyPath) {
+      return;
+    }
+
+    mjsonrpc_db_get_values([frequencyPath]).then(function(rpc) {
+      let frequency = Number(rpc.result.data[0]);
+
+      if (!Number.isFinite(frequency)) {
+        throw new Error("Invalid frequency for " + mode);
+      }
+
+      return mjsonrpc_db_paste(
+        [DESCRIPTION_PATH, CENTER_PATH, HAS_CHANGED_PATH],
+        [mode, frequency, true]
+      );
+    }).then(function() {
+      readVnaValues();
+    }).catch(function(error) {
+      console.error(error);
+      mjsonrpc_error_alert(error);
     });
 }
 
@@ -594,12 +614,14 @@ function saveSaCalibration() {
 
     <div style="margin-bottom:15px; text-align:center;">
     <label for="descriptionValue"><b>Description</b></label><br>
-    <input
-        type="text"
+    <select
         id="descriptionValue"
         style="width:180px; margin-top:5px;"
-        placeholder="Param Description"
         onchange="saveDescription()">
+      <option value="Mode1">Mode1</option>
+      <option value="Mode2">Mode2</option>
+      <option value="Mode3">Mode3</option>
+    </select>
 
     </div>
 

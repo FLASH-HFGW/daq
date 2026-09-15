@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html class="mcss" lang="en">
+
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="midas.css">
+<script src="controls.js"></script>
+<script src="midas.js"></script>
+<script src="mhttpd.js"></script>
+
+<style>
+
+.fitBox {
+  font-size: 18px;
+  margin-bottom: 25px;
+}
+
+.fitBox td {
+  padding: 12px;
+}
+
+.fitBox select {
+  font-size: 100%;
+  width: 155px;
+  padding: 5px;
+}
+
+.fitBox input[type=number] {
+  box-sizing: border-box;
+  width: 170px;
+  padding: 5px;
+  font-size: 100%;
+}
+
+.fitOutput {
+  min-height: 24px;
+  padding: 8px;
+  border: 1px solid #aaa;
+  background: #fff;
+  font-family: monospace;
+  white-space: pre-wrap;
+}
+
+.fitOutput.error {
+  color: #b00020;
+}
+
+.fitTables {
+  display: flex;
+  align-items: flex-start;
+  gap: 35px;
+}
+
+.fitParametersTable,
+.fitResultsTable {
+  border-collapse: collapse;
+}
+
+.fitParametersTable input[type=number] {
+  box-sizing: border-box;
+  width: 125px;
+  padding: 4px;
+  font-size: 15px;
+}
+
+.fitSummary {
+  max-width: 240px;
+  padding: 8px 4px 0;
+  font-size: 14px;
+  text-align: center;
+}
+
+.fitResultsWrapper {
+  position: relative;
+}
+
+.fitResultsWrapper.flaming .fitResultsTable {
+  box-shadow:
+    0 0 12px #ffea00,
+    0 0 24px #ff7b00,
+    0 0 38px #e32600;
+}
+
+.flameEdge {
+  display: none;
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  font-size: 24px;
+  line-height: 1;
+  white-space: nowrap;
+  filter: drop-shadow(0 0 5px #ff5a00);
+}
+
+.fitResultsWrapper.flaming .flameEdge {
+  display: block;
+  animation: flameFlicker 0.18s infinite alternate;
+}
+
+.flameTop,
+.flameBottom {
+  right: -15px;
+  left: -15px;
+  text-align: center;
+  letter-spacing: 3px;
+}
+
+.flameTop {
+  top: -23px;
+}
+
+.flameBottom {
+  bottom: -23px;
+  transform: rotate(180deg);
+}
+
+.flameLeft,
+.flameRight {
+  top: -10px;
+  bottom: -10px;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  letter-spacing: 3px;
+}
+
+.flameLeft {
+  left: -25px;
+}
+
+.flameRight {
+  right: -25px;
+}
+
+@keyframes flameFlicker {
+  from {
+    opacity: 0.82;
+    filter: drop-shadow(0 0 3px #ffb000);
+  }
+  to {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px #ff3c00);
+  }
+}
+
+.modeImages {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  width: calc(100% - 30px);
+  max-width: 1575px;
+  margin: 25px auto 70px;
+}
+
+.modeImage {
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 8px 12px;
+  border: 1px solid #aaa;
+  background: #fff;
+  overflow: hidden;
+}
+
+.modeImage img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.modeImage figcaption {
+  margin-top: 10px;
+  font-size: 18px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.minuitReport {
+  width: calc(100% - 30px);
+  max-width: 1575px;
+  margin: 0 auto 70px;
+}
+
+.minuitReport h2 { font-size: 20px; }
+.minuitReport h3 { margin: 22px 0 8px; font-size: 16px; }
+
+.minuitReport pre {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+  padding: 12px;
+  margin: 0;
+  border: 1px solid #ccc;
+  background: #fafafa;
+  color: #222;
+  font: 13px/1.4 "DejaVu Sans Mono", Consolas, monospace;
+}
+
+#minuitValidity.valid { color: #176b34; }
+#minuitValidity.invalid { color: #b3261e; }
+
+@media (max-width: 850px) {
+  .modeImages {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fitParametersTable th,
+.fitParametersTable td,
+.fitResultsTable th,
+.fitResultsTable td {
+  min-width: 110px;
+  height: 28px;
+  padding: 6px;
+  border: 1px solid #aaa;
+  text-align: center;
+}
+
+</style>
+
+<script>
+
+const FIT_SCRIPT_NAME = "Fit";
+const FIT_OUTPUT_PATH = "/Equipment/VNA/Fit/Output";
+const FIT_MODE_PATH = "/Equipment/VNA/Fit/Mode";
+const FIT_REQUEST_PATH = "/Equipment/VNA/Fit/Request";
+const FIT_RESULT_PATH = "/Equipment/VNA/Fit/Result";
+const FIT_MODE_FREQUENCY_PATHS = {
+  "Mode1": "/Equipment/VNA/vnaCalib/freq_mode1",
+  "Mode2": "/Equipment/VNA/vnaCalib/freq_mode2",
+  "Mode3": "/Equipment/VNA/vnaCalib/freq_mode3"
+};
+const FIT_RESULT_TIMEOUT_MS = 60000;
+const FIT_RESULT_POLL_MS = 250;
+const FIT_PARAMETER_NAMES = [
+  "Abs12", "f0", "Q0", "beta1", "beta2", "Abs21", "Abs22", "q22"
+];
+
+let fitFlameTimer;
+let fitFrequencyRangeAutomatic = true;
+let fitBeta2Automatic = true;
+const fitAbsAutomatic = {Abs12: true, Abs21: true, Abs22: true};
+const fitAbsLimitsAutomatic = {
+  min: {Abs12: true, Abs21: true, Abs22: true},
+  max: {Abs12: true, Abs21: true, Abs22: true}
+};
+
+window.onload = function() {
+  mhttpd_init("Fit");
+  resetFitFrequencyRange();
+  resetFitBeta2();
+  resetFitAbs();
+  readFitMode();
+};
+
+function readFitMode() {
+  return mjsonrpc_db_get_values([FIT_MODE_PATH]).then(function(rpc) {
+    if (!rpc || !rpc.result || !rpc.result.data) {
+      throw new Error("Risposta ODB non valida");
+    }
+
+    let mode = String(rpc.result.data[0]);
+    let fitMode = document.getElementById("fitMode");
+
+    if (Array.from(fitMode.options).some(function(option) {
+      return option.value === mode;
+    })) {
+      fitMode.value = mode;
+    }
+
+    setModeQ0Guess(fitMode.value);
+    return loadModeFrequency(fitMode.value);
+  }).catch(function(error) {
+    console.error(error);
+    mjsonrpc_error_alert(error);
+  });
+}
+
+function setFitMode() {
+  let selectedMode = document.getElementById("fitMode").value;
+
+  return mjsonrpc_db_paste([FIT_MODE_PATH], [selectedMode]).then(function(rpc) {
+    if (!rpc || !rpc.result || !rpc.result.status ||
+        Number(rpc.result.status[0]) !== 1) {
+      let status = rpc && rpc.result ? rpc.result.status : "sconosciuto";
+      throw new Error("Scrittura di " + FIT_MODE_PATH +
+                      " fallita (status " + status + ")");
+    }
+
+    return mjsonrpc_db_get_values([FIT_MODE_PATH]);
+
+  }).then(function(rpc) {
+    if (!rpc || !rpc.result || !rpc.result.data ||
+        String(rpc.result.data[0]) !== selectedMode) {
+      throw new Error("Il valore " + selectedMode +
+                      " non e stato salvato in " + FIT_MODE_PATH);
+    }
+
+    return selectedMode;
+  });
+}
+
+function saveFitMode() {
+  setModeQ0Guess(document.getElementById("fitMode").value);
+  resetFitFrequencyRange();
+  resetFitBeta2();
+  resetFitAbs();
+  setFitMode().then(function(selectedMode) {
+    return loadModeFrequency(selectedMode);
+  }).catch(function(error) {
+    console.error(error);
+    mjsonrpc_error_alert(error);
+  });
+}
+
+function setModeQ0Guess(mode) {
+  document.querySelector('.fitGuess[data-parameter="Q0"]').value =
+    mode === "Mode3" ? "39000" : "53000";
+  document.querySelector('.fitMin[data-parameter="Q0"]').value =
+    mode === "Mode3" ? "30000" : "48000";
+}
+
+function resetFitFrequencyRange() {
+  fitFrequencyRangeAutomatic = true;
+  document.getElementById("fitFminGhz").value = "";
+  document.getElementById("fitFmaxGhz").value = "";
+}
+
+function markFitFrequencyRangeManual() {
+  let fminInput = document.getElementById("fitFminGhz").value.trim();
+  let fmaxInput = document.getElementById("fitFmaxGhz").value.trim();
+  fitFrequencyRangeAutomatic = (fminInput === "" && fmaxInput === "");
+}
+
+function resetFitBeta2() {
+  fitBeta2Automatic = true;
+  document.querySelector('.fitGuess[data-parameter="beta2"]').value = "";
+}
+
+function markFitBeta2Manual() {
+  let beta2Input = document.querySelector(
+    '.fitGuess[data-parameter="beta2"]'
+  ).value.trim();
+  fitBeta2Automatic = (beta2Input === "");
+}
+
+function resetFitAbs() {
+  Object.keys(fitAbsAutomatic).forEach(function(name) {
+    fitAbsAutomatic[name] = true;
+    document.querySelector('.fitGuess[data-parameter="' + name + '"]').value = "";
+    ["min", "max"].forEach(function(side) {
+      fitAbsLimitsAutomatic[side][name] = true;
+      let className = side === "min" ? "fitMin" : "fitMax";
+      document.querySelector('.' + className + '[data-parameter="' + name + '"]').value = "";
+    });
+  });
+}
+
+function markFitAbsManual(input) {
+  fitAbsAutomatic[input.dataset.parameter] = (input.value.trim() === "");
+}
+
+function markFitAbsLimitManual(input, side) {
+  fitAbsLimitsAutomatic[side][input.dataset.parameter] = (input.value.trim() === "");
+}
+
+function loadModeFrequency(mode) {
+  let frequencyPath = FIT_MODE_FREQUENCY_PATHS[mode];
+  if (!frequencyPath) {
+    return Promise.reject(new Error("Modalita di fit non valida: " + mode));
+  }
+
+  return mjsonrpc_db_get_values([frequencyPath]).then(function(rpc) {
+    if (!rpc || !rpc.result || !rpc.result.data) {
+      throw new Error("Risposta ODB non valida per " + frequencyPath);
+    }
+
+    let frequencyHz = Number(rpc.result.data[0]);
+    if (!Number.isFinite(frequencyHz) || frequencyHz <= 0) {
+      throw new Error("Frequenza non valida per " + mode);
+    }
+
+    // Do not overwrite fields if another mode was selected while reading ODB.
+    if (document.getElementById("fitMode").value !== mode) {
+      return;
+    }
+
+    // Two units on the fourth significant digit: 2 MHz near 8.7 GHz.
+    let fourthSignificantDigit = Math.pow(
+      10,
+      Math.floor(Math.log10(Math.abs(frequencyHz))) - 3
+    );
+
+    document.querySelector('.fitGuess[data-parameter="f0"]').value =
+      String(frequencyHz / 1e9);
+    document.querySelector('.fitMin[data-parameter="f0"]').value =
+      String((frequencyHz - 2 * fourthSignificantDigit) / 1e9);
+    document.querySelector('.fitMax[data-parameter="f0"]').value =
+      String((frequencyHz + 2 * fourthSignificantDigit) / 1e9);
+  });
+}
+
+function readParameterValues(className, optionalParameters = []) {
+  return Array.from(document.querySelectorAll("." + className)).map(function(input) {
+    let rawValue = input.value.trim();
+    let value = Number(rawValue);
+    if (rawValue === "") {
+      if (optionalParameters.includes(input.dataset.parameter)) {
+        return null;
+      }
+      throw new Error("Valore mancante per " + input.dataset.parameter);
+    }
+    if (!Number.isFinite(value)) {
+      throw new Error("Valore numerico non valido per " + input.dataset.parameter);
+    }
+    return value;
+  });
+}
+
+function buildFitRequest(selectedMode) {
+  let fminInput = document.getElementById("fitFminGhz").value.trim();
+  let fmaxInput = document.getElementById("fitFmaxGhz").value.trim();
+  let fminGhz = Number(fminInput);
+  let fmaxGhz = Number(fmaxInput);
+  let automaticParameters = Object.keys(fitAbsAutomatic).filter(function(name) {
+    return fitAbsAutomatic[name];
+  });
+  if (fitBeta2Automatic) {
+    automaticParameters.push("beta2");
+  }
+  let guess = readParameterValues("fitGuess", automaticParameters);
+  let automaticMin = Object.keys(fitAbsLimitsAutomatic.min).filter(function(name) {
+    return fitAbsLimitsAutomatic.min[name];
+  });
+  let automaticMax = Object.keys(fitAbsLimitsAutomatic.max).filter(function(name) {
+    return fitAbsLimitsAutomatic.max[name];
+  });
+  let minimum = readParameterValues("fitMin", automaticMin);
+  let maximum = readParameterValues("fitMax", automaticMax);
+  let f0Index = FIT_PARAMETER_NAMES.indexOf("f0");
+
+  // The f0 fields are displayed in GHz; the fitting code expects Hz.
+  guess[f0Index] *= 1e9;
+  minimum[f0Index] *= 1e9;
+  maximum[f0Index] *= 1e9;
+
+  automaticParameters.forEach(function(name) {
+    guess[FIT_PARAMETER_NAMES.indexOf(name)] = null;
+  });
+  automaticMin.forEach(function(name) {
+    minimum[FIT_PARAMETER_NAMES.indexOf(name)] = null;
+  });
+  automaticMax.forEach(function(name) {
+    maximum[FIT_PARAMETER_NAMES.indexOf(name)] = null;
+  });
+
+  if (!fitFrequencyRangeAutomatic &&
+      (fminInput === "" || fmaxInput === "" ||
+       !Number.isFinite(fminGhz) || !Number.isFinite(fmaxGhz) ||
+       fminGhz >= fmaxGhz)) {
+    throw new Error("fmin e fmax manuali devono essere validi e ordinati");
+  }
+
+  FIT_PARAMETER_NAMES.forEach(function(name, index) {
+    if (minimum[index] !== null && maximum[index] !== null &&
+        minimum[index] >= maximum[index]) {
+      throw new Error("Min deve essere minore di Max per " + name);
+    }
+    if (automaticParameters.includes(name)) {
+      return;
+    }
+    if ((minimum[index] !== null && guess[index] < minimum[index]) ||
+        (maximum[index] !== null && guess[index] > maximum[index])) {
+      throw new Error("Guess Val deve essere tra Min e Max per " + name);
+    }
+  });
+
+  let request = {
+    mode: selectedMode,
+    parameter_names: FIT_PARAMETER_NAMES,
+    beta2_auto: fitBeta2Automatic,
+    abs_auto: fitAbsAutomatic,
+    guess: guess,
+    min: minimum,
+    max: maximum
+  };
+
+  if (!fitFrequencyRangeAutomatic) {
+    request.fmin_hz = fminGhz * 1e9;
+    request.fmax_hz = fmaxGhz * 1e9;
+  }
+
+  return JSON.stringify(request);
+}
+
+function prepareFitRequest(selectedMode, requestJson) {
+  let paths = [
+    FIT_MODE_PATH,
+    FIT_OUTPUT_PATH,
+    FIT_REQUEST_PATH,
+    FIT_RESULT_PATH
+  ];
+  let values = [selectedMode, "", requestJson, ""];
+
+  return mjsonrpc_db_paste(paths, values).then(function(rpc) {
+    if (!rpc || !rpc.result || !rpc.result.status ||
+        rpc.result.status.length !== paths.length ||
+        rpc.result.status.some(function(status) { return Number(status) !== 1; })) {
+      let status = rpc && rpc.result ? rpc.result.status : "sconosciuto";
+      throw new Error("Preparazione del fit fallita (status " + status + ")");
+    }
+
+    return mjsonrpc_db_get_values(paths);
+
+  }).then(function(rpc) {
+    if (!rpc || !rpc.result || !rpc.result.data ||
+        String(rpc.result.data[0]) !== selectedMode ||
+        String(rpc.result.data[1]) !== "" ||
+        String(rpc.result.data[2]) !== requestJson ||
+        String(rpc.result.data[3]) !== "") {
+      throw new Error("Richiesta di fit non salvata correttamente nell'ODB");
+    }
+  });
+}
+
+function waitForFitResult(deadline) {
+  return mjsonrpc_db_get_values([FIT_OUTPUT_PATH]).then(function(rpc) {
+    if (!rpc || !rpc.result || !rpc.result.data) {
+      throw new Error("Risposta ODB non valida durante l'attesa del fit");
+    }
+
+    let output = String(rpc.result.data[0]);
+    if (output !== "") {
+      return output;
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error("Timeout: Fit.py non ha pubblicato il nuovo risultato");
+    }
+
+    return new Promise(function(resolve) {
+      window.setTimeout(resolve, FIT_RESULT_POLL_MS);
+    }).then(function() {
+      return waitForFitResult(deadline);
+    });
+  });
+}
+
+function refreshFitPlots() {
+  let version = Date.now().toString();
+
+  ["S21", "S22", "S12"].forEach(function(parameter) {
+    document.getElementById("plot" + parameter).src =
+      parameter + ".png?v=" + version;
+    document.getElementById("pdf" + parameter).href =
+      parameter + ".pdf?v=" + version;
+  });
+}
+
+function readFitResult() {
+  return mjsonrpc_db_get_values([FIT_RESULT_PATH]).then(function(rpc) {
+    if (!rpc || !rpc.result || !rpc.result.data) {
+      throw new Error("Risultato del fit non disponibile nell'ODB");
+    }
+
+    let result = JSON.parse(String(rpc.result.data[0]));
+    if (!result.ok) {
+      throw new Error(result.error || "Fit fallito");
+    }
+    return result;
+  });
+}
+
+function formatFitNumber(value) {
+  if (value === null || !Number.isFinite(Number(value))) {
+    return "---";
+  }
+
+  value = Number(value);
+  let absoluteValue = Math.abs(value);
+  if ((absoluteValue !== 0 && absoluteValue < 1e-3) || absoluteValue >= 1e5) {
+    return value.toExponential(6);
+  }
+  return value.toPrecision(7);
+}
+
+function clearFitResults() {
+  FIT_PARAMETER_NAMES.forEach(function(name, index) {
+    document.getElementById("fitValue" + index).textContent = "";
+    document.getElementById("fitError" + index).textContent = "";
+  });
+  document.getElementById("fitSummary").textContent = "Fit in corso...";
+  document.getElementById("minuitReportBody").hidden = true;
+  document.getElementById("minuitReportStatus").textContent = "Fit in corso...";
+  ["minuitFmin", "minuitValidity", "minuitCorrelation"].forEach(function(id) {
+    document.getElementById(id).textContent = "";
+  });
+}
+
+function displayMinuitReport(result) {
+  let report = result.minuit_report;
+  let body = document.getElementById("minuitReportBody");
+  let status = document.getElementById("minuitReportStatus");
+  if (!report) {
+    body.hidden = true;
+    status.textContent = "Riepilogo Minuit non disponibile per questo risultato.";
+    return;
+  }
+  // Preserve native Minuit tables as plain text, without interpreting HTML.
+  document.getElementById("minuitFmin").textContent = report.fmin;
+  document.getElementById("minuitCorrelation").textContent = report.correlation || "Matrice di correlazione non disponibile. Eseguire nuovamente il fit.";
+  let validity = document.getElementById("minuitValidity");
+  validity.textContent = report.valid;
+  validity.className = result.valid ? "valid" : "invalid";
+  status.textContent = "";
+  body.hidden = false;
+}
+
+function displayFitResults(result) {
+  let fminHz = Number(result.fmin_hz);
+  let fmaxHz = Number(result.fmax_hz);
+  if (Number.isFinite(fminHz) && Number.isFinite(fmaxHz)) {
+    document.getElementById("fitFminGhz").value = String(fminHz / 1e9);
+    document.getElementById("fitFmaxGhz").value = String(fmaxHz / 1e9);
+  }
+
+  let initialBeta2 = Number(result.initial_beta2);
+  if (fitBeta2Automatic && Number.isFinite(initialBeta2)) {
+    document.querySelector('.fitGuess[data-parameter="beta2"]').value =
+      String(initialBeta2);
+  }
+
+  Object.keys(fitAbsAutomatic).forEach(function(name) {
+    let value = result.initial_abs && result.initial_abs[name];
+    if (fitAbsAutomatic[name] && typeof value === "number" && Number.isFinite(value)) {
+      document.querySelector('.fitGuess[data-parameter="' + name + '"]').value =
+        String(value);
+    }
+    ["min", "max"].forEach(function(side) {
+      let limits = result.initial_abs_limits && result.initial_abs_limits[name];
+      let limit = limits && limits[side];
+      if (fitAbsLimitsAutomatic[side][name] && typeof limit === "number" && Number.isFinite(limit)) {
+        let className = side === "min" ? "fitMin" : "fitMax";
+        document.querySelector('.' + className + '[data-parameter="' + name + '"]').value =
+          String(limit);
+      }
+    });
+  });
+
+  result.parameters.forEach(function(parameter, index) {
+    document.getElementById("fitValue" + index).textContent =
+      formatFitNumber(parameter.value);
+    document.getElementById("fitError" + index).textContent =
+      formatFitNumber(parameter.error);
+  });
+
+  document.getElementById("fitSummary").textContent =
+    (result.valid ? "Fit valido" : "Fit non valido") +
+    " | chi2 ridotto: " + formatFitNumber(result.reduced_chi2);
+  displayMinuitReport(result);
+}
+
+function startFit() {
+  let resultsWrapper = document.getElementById("fitResultsWrapper");
+  let fitButton = document.getElementById("btnFit");
+  let fitOutput = document.getElementById("fitOutput");
+  let selectedMode = document.getElementById("fitMode").value;
+  let requestJson;
+
+  try {
+    requestJson = buildFitRequest(selectedMode);
+  } catch (error) {
+    fitOutput.classList.add("error");
+    fitOutput.textContent = error.message || String(error);
+    return;
+  }
+
+  window.clearTimeout(fitFlameTimer);
+  resultsWrapper.classList.remove("flaming");
+  void resultsWrapper.offsetWidth;
+  resultsWrapper.classList.add("flaming");
+
+  fitButton.disabled = true;
+  fitOutput.classList.remove("error");
+  fitOutput.textContent = "Fit " + selectedMode + " in corso...";
+  clearFitResults();
+
+  return prepareFitRequest(selectedMode, requestJson).then(function() {
+    return mjsonrpc_call("exec_script", {
+      customscript: FIT_SCRIPT_NAME
+    });
+  }).then(function(rpc) {
+    if (!rpc || !rpc.result || rpc.result.status !== 1) {
+      let status = rpc && rpc.result ? rpc.result.status : "sconosciuto";
+      throw new Error("Esecuzione di Fit.py fallita (status " + status + ")");
+    }
+
+    return waitForFitResult(Date.now() + FIT_RESULT_TIMEOUT_MS);
+
+  }).then(function(output) {
+    return readFitResult().then(function(result) {
+      fitOutput.textContent = output;
+      displayFitResults(result);
+      refreshFitPlots();
+    });
+
+  }).catch(function(error) {
+    console.error(error);
+    fitOutput.classList.add("error");
+    fitOutput.textContent = error.message || String(error);
+    document.getElementById("minuitReportBody").hidden = true;
+    document.getElementById("minuitReportStatus").textContent =
+      "Riepilogo non disponibile: " + (error.message || String(error));
+
+  }).finally(function() {
+    fitFlameTimer = window.setTimeout(function() {
+      resultsWrapper.classList.remove("flaming");
+    }, 1000);
+    fitButton.disabled = false;
+  });
+}
+
+</script>
+
+<title>Fit</title>
+</head>
+
+<body class="mcss">
+
+<div id="mheader"></div>
+<div id="msidenav"></div>
+
+<div id="mmain">
+
+  <table class="mtable fitBox">
+    <tr>
+      <th class="mtableheader" colspan="2">Fit Scattering Parameters</th>
+    </tr>
+
+    <tr align="center">
+      <td>
+        <label for="fitMode"><b>Mode</b></label><br>
+        <select id="fitMode" onchange="saveFitMode()">
+          <option value="Mode1">Mode1</option>
+          <option value="Mode2">Mode2</option>
+          <option value="Mode3">Mode3</option>
+        </select>
+      </td>
+
+      <td>
+        <input class="mbutton"
+               id="btnFit"
+               type="button"
+               value="Fit"
+               onclick="startFit()"
+               style="padding:7px 30px;font-size:18px;margin:5px">
+      </td>
+    </tr>
+
+    <tr align="center">
+      <td>
+        <label for="fitFminGhz"><b>fmin S22 [GHz]</b></label><br>
+        <input id="fitFminGhz" type="number" step="any"
+               placeholder="automatico da S22"
+               oninput="markFitFrequencyRangeManual()">
+      </td>
+      <td>
+        <label for="fitFmaxGhz"><b>fmax S22 [GHz]</b></label><br>
+        <input id="fitFmaxGhz" type="number" step="any"
+               placeholder="automatico da S22"
+               oninput="markFitFrequencyRangeManual()">
+      </td>
+    </tr>
+
+    <tr>
+      <td colspan="2">
+        <div id="fitOutput" class="fitOutput" aria-live="polite">Pronto</div>
+      </td>
+    </tr>
+
+    <tr>
+      <td colspan="2">
+        <div class="fitTables">
+          <table class="fitParametersTable">
+            <tr>
+              <th>Fit Param</th>
+              <th>Guess Val</th>
+              <th>Min</th>
+              <th>Max</th>
+            </tr>
+            <tr><td>Abs12</td><td><input class="fitGuess" data-parameter="Abs12" type="number" step="any" placeholder="automatico da S12" oninput="markFitAbsManual(this)"></td><td><input class="fitMin" data-parameter="Abs12" type="number" step="any" placeholder="Guess -25%" oninput="markFitAbsLimitManual(this, 'min')"></td><td><input class="fitMax" data-parameter="Abs12" type="number" step="any" placeholder="Guess +25%" oninput="markFitAbsLimitManual(this, 'max')"></td></tr>
+            <tr><td>f0 [GHz]</td><td><input class="fitGuess" data-parameter="f0" type="number" step="any" value="8.7364"></td><td><input class="fitMin" data-parameter="f0" type="number" step="any" value="8.73"></td><td><input class="fitMax" data-parameter="f0" type="number" step="any" value="8.75"></td></tr>
+            <tr><td>Q0</td><td><input class="fitGuess" data-parameter="Q0" type="number" step="any" value="53000"></td><td><input class="fitMin" data-parameter="Q0" type="number" step="any" value="48000"></td><td><input class="fitMax" data-parameter="Q0" type="number" step="any" value="65000"></td></tr>
+            <tr><td>beta1</td><td><input class="fitGuess" data-parameter="beta1" type="number" step="any" value="0.08"></td><td><input class="fitMin" data-parameter="beta1" type="number" step="any" value="0.0001"></td><td><input class="fitMax" data-parameter="beta1" type="number" step="any" value="10"></td></tr>
+            <tr><td>beta2</td><td><input class="fitGuess" data-parameter="beta2" type="number" step="any" placeholder="automatico da QL" oninput="markFitBeta2Manual()"></td><td><input class="fitMin" data-parameter="beta2" type="number" step="any" value="0.1"></td><td><input class="fitMax" data-parameter="beta2" type="number" step="any" value="8"></td></tr>
+            <tr><td>Abs21</td><td><input class="fitGuess" data-parameter="Abs21" type="number" step="any" placeholder="automatico da S21" oninput="markFitAbsManual(this)"></td><td><input class="fitMin" data-parameter="Abs21" type="number" step="any" placeholder="Guess -20%" oninput="markFitAbsLimitManual(this, 'min')"></td><td><input class="fitMax" data-parameter="Abs21" type="number" step="any" placeholder="Guess +20%" oninput="markFitAbsLimitManual(this, 'max')"></td></tr>
+            <tr><td>Abs22</td><td><input class="fitGuess" data-parameter="Abs22" type="number" step="any" placeholder="automatico da S22" oninput="markFitAbsManual(this)"></td><td><input class="fitMin" data-parameter="Abs22" type="number" step="any" placeholder="Guess -15%" oninput="markFitAbsLimitManual(this, 'min')"></td><td><input class="fitMax" data-parameter="Abs22" type="number" step="any" placeholder="Guess +15%" oninput="markFitAbsLimitManual(this, 'max')"></td></tr>
+            <tr><td>q22</td><td><input class="fitGuess" data-parameter="q22" type="number" step="any" value="0"></td><td><input class="fitMin" data-parameter="q22" type="number" step="any" value="-1"></td><td><input class="fitMax" data-parameter="q22" type="number" step="any" value="1"></td></tr>
+          </table>
+
+          <div class="fitResultsWrapper" id="fitResultsWrapper">
+            <div class="flameEdge flameTop" aria-hidden="true">🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥</div>
+            <div class="flameEdge flameBottom" aria-hidden="true">🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥</div>
+            <div class="flameEdge flameLeft" aria-hidden="true">🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥</div>
+            <div class="flameEdge flameRight" aria-hidden="true">🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥</div>
+
+            <table class="fitResultsTable">
+              <tr>
+                <th>Fit Result</th>
+                <th>Error</th>
+              </tr>
+              <tr><td id="fitValue0">&nbsp;</td><td id="fitError0"></td></tr>
+              <tr><td id="fitValue1">&nbsp;</td><td id="fitError1"></td></tr>
+              <tr><td id="fitValue2">&nbsp;</td><td id="fitError2"></td></tr>
+              <tr><td id="fitValue3">&nbsp;</td><td id="fitError3"></td></tr>
+              <tr><td id="fitValue4">&nbsp;</td><td id="fitError4"></td></tr>
+              <tr><td id="fitValue5">&nbsp;</td><td id="fitError5"></td></tr>
+              <tr><td id="fitValue6">&nbsp;</td><td id="fitError6"></td></tr>
+              <tr><td id="fitValue7">&nbsp;</td><td id="fitError7"></td></tr>
+            </table>
+            <div id="fitSummary" class="fitSummary">Nessun fit eseguito</div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="modeImages">
+    <figure class="modeImage">
+      <img id="plotS21" src="S21.png" alt="Grafico S21">
+      <figcaption><a id="pdfS21" href="S21.pdf" target="_blank">S21</a></figcaption>
+    </figure>
+
+    <figure class="modeImage">
+      <img id="plotS22" src="S22.png" alt="Grafico S22">
+      <figcaption><a id="pdfS22" href="S22.pdf" target="_blank">S22</a></figcaption>
+    </figure>
+
+    <figure class="modeImage">
+      <img id="plotS12" src="S12.png" alt="Grafico S12">
+      <figcaption><a id="pdfS12" href="S12.pdf" target="_blank">S12</a></figcaption>
+    </figure>
+  </div>
+
+  <section class="minuitReport" aria-labelledby="minuitReportTitle">
+    <h2 id="minuitReportTitle">Risultati Minuit</h2>
+    <p id="minuitReportStatus" role="status">Nessun fit eseguito</p>
+    <div id="minuitReportBody" hidden>
+      <p>Minimizzazione in formato originale Minuit; correlazioni a due cifre significative.</p>
+      <h3>Minimizzazione</h3>
+      <pre id="minuitFmin" tabindex="0" aria-label="Stato della minimizzazione"></pre>
+      <p id="minuitValidity"></p>
+      <h3>Matrice di correlazione</h3>
+      <pre id="minuitCorrelation" tabindex="0" aria-label="Matrice di correlazione"></pre>
+    </div>
+  </section>
+
+</div>
+
+</body>
+</html>

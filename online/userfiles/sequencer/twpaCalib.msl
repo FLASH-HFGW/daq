@@ -1,0 +1,94 @@
+PARAM fstart, "calib freq start", 7.8e9
+PARAM fstop, "calib freq stop", 8.1e9
+PARAM nfreqs, "n frequency steps", 60
+SET fstep, ($fstop - $fstart) / $nfreqs
+
+PARAM pstart, "calib power start", -16
+PARAM pstop, "calib power stop", -10
+PARAM npow, "n power steps", 40
+SET pstep, ($pstop - $pstart) / $npow
+
+ODBSUBDIR "/Equipment/LocalOscill/twpaCalib/"
+ODBSET fstart, $fstart
+ODBSET fstop, $fstop
+ODBSET nfreqs, $nfreqs
+ODBSET pstart, $pstart
+ODBSET pstop, $pstop
+ODBSET npow, $npow
+ENDODBSUBDIR
+
+MESSAGE "Have you done the autodetect for the peaks???"[,1]
+
+ODBSET "/Experiment/Run Parameters/With_LO", 0
+
+ODBGET "/Equipment/VNA/vnaCalib/freq_mode1", fmodecav
+
+ODBSET "/Equipment/VNA/Variables/Center_Hz", $fmodecav
+ODBSET "/Equipment/VNA/Variables/Scatter", "S21"
+ODBSET "/Equipment/VNA/Variables/Format", "MLOG"
+ODBSET "/Equipment/VNA/Variables/Npoints", 1
+ODBSET "/Equipment/VNA/Variables/IFBW_Hz", 300
+ODBSET "/Equipment/VNA/Variables/Span_Hz", 1
+ODBSET "/Equipment/VNA/Variables/Power_dBm", -40
+
+ODBSET "/Equipment/LocalOscill/twpaCalib/New_file", 1
+ODBSET "/Equipment/LocalOscill/Variables/onoff Pump", 1
+ODBSET "/Equipment/LocalOscill/twpaCalib/twpaCalib", 1
+
+SET pscan, $pstart
+SET fscan, $fstart
+SET maxS21, -60
+ODBSET "/Equipment/LocalOscill/twpaCalib/Max_S21", $maxS21
+ODBSET "/Equipment/LocalOscill/twpaCalib/Max_S21_freq", $fstart
+ODBSET "/Equipment/LocalOscill/twpaCalib/Max_S21_pow", $pstart
+
+ODBSET "/Equipment/LocalOscill/Variables/hasChanged", 1
+WAIT ODBvalue, "/Equipment/LocalOscill/Variables/hasChanged", ==, 0
+
+ODBSET "/Equipment/VNA/Variables/hasChanged", 1
+WAIT ODBvalue, "/Equipment/VNA/Variables/hasChanged", ==, 0
+
+
+LOOP $npow
+   
+   ODBSET "/Equipment/LocalOscill/Variables/power Pump", $pscan
+   
+   LOOP $nfreqs
+      
+      ODBSET "/Equipment/LocalOscill/Variables/freq Pump", $fscan
+
+      ODBSET "/Equipment/LocalOscill/twpaCalib/twpaCalib", 1
+      WAIT ODBvalue, "/Equipment/LocalOscill/twpaCalib/twpaCalib", ==, 0
+      
+      ODBSET "/Equipment/VNA/twpaCalib/twpaCalib", 1
+      WAIT ODBvalue, "/Equipment/VNA/twpaCalib/twpaCalib", ==, 0
+      
+      # WAIT seconds, 0.1
+      
+      ODBGET "/Equipment/LocalOscill/twpaCalib/Max_S21", currentmax
+      IF $currentmax > $maxS21
+         SET maxS21, $currentmax
+         ODBSET "/Equipment/LocalOscill/twpaCalib/Max_S21_freq", $fscan
+         ODBSET "/Equipment/LocalOscill/twpaCalib/Max_S21_pow", $pscan
+      ELSE
+         ODBSET "/Equipment/LocalOscill/twpaCalib/Max_S21", $maxS21
+         
+      ENDIF
+      
+      SET fscan, $fscan + $fstep
+      
+   ENDLOOP
+   
+   SET fscan, $fstart
+   SET pscan, $pscan + $pstep
+  
+ENDLOOP
+
+
+ODBSET "/Equipment/LocalOscill/twpaCalib/twpaCalib", 0
+ODBSET "/Equipment/VNA/twpaCalib/twpaCalib", 0
+ODBSET "/Equipment/LocalOscill/Variables/onoff Pump", 0
+ODBSET "/Equipment/LocalOscill/Variables/hasChanged", 1
+WAIT ODBvalue, "/Equipment/VNA/Variables/hasChanged", ==, 0
+
+MSG "TWPA calibration completed"

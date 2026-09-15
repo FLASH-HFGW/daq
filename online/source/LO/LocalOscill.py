@@ -8,6 +8,7 @@ import json
 import ColdLibraryv3 as coldlib
 from ColdLibraryv3 import modules
 import time
+from datetime import datetime
 
 writebank = False
 
@@ -39,7 +40,7 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         default_common.buffer_name = "SYSTEM"
         default_common.trigger_mask = 0
         default_common.event_id = 7
-        default_common.period_ms = 1000
+        default_common.period_ms = 100
         default_common.read_when = midas.RO_ALWAYS
         default_common.log_history = 0
 
@@ -133,10 +134,10 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         
         
     def readout_func(self):
-    
 
         hasChanged = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"))
         Calib = self.client.odb_get("/Equipment/{:}/daqCalibration/{:}".format(self.equip_name, "Calib"))
+        twpaCalib = self.client.odb_get("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "twpaCalib"))
 
         if hasChanged == True:
         
@@ -155,7 +156,7 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
             powerKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power Pump"))
             roscKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "Ref Oscill Pump"))
             onoffKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "onoff Pump"))
-
+            
             if onoffTeledCh1 == 1:
                 strTeledCh1 : str = 'ON'
             elif onoffTeledCh1 == 0:
@@ -169,7 +170,6 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
                 strTeledCh2 : str = 'OFF'
             else:
                 print('break') #mettere messaggio errore midas
-            
             #### set dei parametri sugli strumenti
             self.RShandler.power(powerRS)
             self.RShandler.freq(freqRS)
@@ -188,11 +188,46 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
             self.KSpump.output(onoffKS)
 
             self.Teledyne.ref_out('ON')
-
             hasChanged = False
             self.client.odb_set("/Equipment/{:}/Variables/{:}".format(self.equip_name, "hasChanged"), hasChanged)
 
+            
 
+        #prepares twpa working point calibration
+        if twpaCalib == True:
+            
+            newfile = self.client.odb_get("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "New_file"))
+            freqKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq Pump"))
+            powerKS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power Pump"))
+            self.KSpump.power(powerKS)
+            self.KSpump.freq(freqKS)
+            
+            if newfile:
+                f_start = self.client.odb_get("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "fstart"))
+                f_stop = self.client.odb_get("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "fstop"))
+                N_freqs = self.client.odb_get("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "nfreqs"))
+
+                p_start = self.client.odb_get("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "pstart"))
+                p_stop = self.client.odb_get("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "pstop"))
+                N_pow = self.client.odb_get("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "npow"))
+
+                data = np.c_[f_start, f_stop, N_freqs, p_start, p_stop, N_pow]
+                now = datetime.now()
+                timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
+                filepathname = '/home/cold/data/calib/twpaPumpMap_{:}_{:}.txt'.format(self.equip_name, timestamp)
+                np.savetxt(filepathname, data)
+
+                self.client.odb_set("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "File_path_name"), filepathname)
+
+                newfile = False
+                self.client.odb_set("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "New_file"), newfile)
+
+            twpaCalib = False
+            self.client.odb_set("/Equipment/{:}/twpaCalib/{:}".format(self.equip_name, "twpaCalib"), twpaCalib)
+            
+            
+
+        #starts daq electronics calibration
         if Calib == True:
             f_start = self.client.odb_get("/Equipment/{:}/daqCalibration/{:}".format(self.equip_name, "f_start"))
             f_stop = self.client.odb_get("/Equipment/{:}/daqCalibration/{:}".format(self.equip_name, "f_stop"))
@@ -207,6 +242,7 @@ class MyLOEquipment(midas.frontend.EquipmentBase):
         
         global writebank
 
+        #writes bank with all the LO parameters only once at beginning of run
         if writebank:
             freqRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "freq RS"))
             powerRS = self.client.odb_get("/Equipment/{:}/Variables/{:}".format(self.equip_name, "power RS"))

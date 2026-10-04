@@ -93,6 +93,7 @@ INT interrupt_configure(INT cmd, INT source, POINTER_T adr);
 
 INT StartAcq();
 INT StopAcq();
+int find_GPS(const int16(checkarray)[] , const int threshold, const int gapslope, bool& start);
 
 
 /*-- Equipment list ------------------------------------------------*/
@@ -164,8 +165,12 @@ int64       g_Len = 0;
 /* Sampling rate of card*/
 int64       g_Sampling_rate_MS =  MEGA(5);    //default but will be changed in ODB
 
+bool debug_ch6 = false;
+int MAXBUFFER = 4*1024*1024;
+int channelrange_6 = 0;
+
 int32 g_transfered=0;
-extern INT run_state;
+//extern INT run_state;
 int g_size = 0;
 
 
@@ -189,6 +194,7 @@ INT frontend_init()
                    "Buffer_size_GB = INT64 : 1\n"
                    //"Notify_size_MB = INT : 16\n"
                    "Sampling_rate_MS = INT64 : 5\n"
+                   "Debug_GPS_netbox = BOOL : 0\n"
                    );
   int setup_Channel_range_mV[8]={5000,5000,5000,5000,5000,5000,5000,5000};
   db_set_value(hDB,0,"Equipment/NetBox/Settings/Channel_range_mV",setup_Channel_range_mV, sizeof(setup_Channel_range_mV),8,TID_INT);
@@ -253,6 +259,7 @@ INT begin_of_run(INT run_number, char *error)
   g_size = sizeof(Channel_range_mV);
   db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Channel_range_mV",Channel_range_mV,&g_size,TID_INT,FALSE);
   if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
+  channelrange_6 = Channel_range_mV[6];
 
   int Pretrigger_channels;
   g_size = sizeof(Pretrigger_channels);
@@ -278,6 +285,10 @@ INT begin_of_run(INT run_number, char *error)
   db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Sampling_rate_MS",&g_Sampling_rate_MS,&g_size,TID_INT64,FALSE);
   if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
   g_Sampling_rate_MS= MEGA(g_Sampling_rate_MS);
+
+  g_size = sizeof(int);
+  db_ret = db_get_value(hDB, 0, "/Equipment/Netbox/Settings/Debug_GPS_netbox",&debug_ch6,&g_size,TID_BOOL,FALSE);
+  if(db_ret != DB_SUCCESS)  {cm_msg(MERROR,"ODB","Error in get value ODB (debug_ch6) with error %s (meaning see midas.h)", cm_get_error(db_ret).c_str());   return FE_ERR_ODB;  }
 
   // do a simple standard setup
   spcm_dwSetParam_i32 (hCardDigi, SPC_CHENABLE,       Channels_enabled);              // channels enabled. 255=all channels
@@ -447,10 +458,199 @@ INT interrupt_configure(INT cmd, INT source, POINTER_T adr)
 
 INT read_event(char *pevent, INT off)
 {
+  //I wait for the notify size to interrupt
   dwError = spcm_dwSetParam_i32 (hCardDigi, SPC_M2CMD, M2CMD_DATA_WAITDMA);
 
+
+  //The first version is with debug: 7 chs and 8 elements because I store I Q the full pps channel and the analysis result.
+  //After, one should put the calculation in the main cycle and remove the pps channel
+  //create buffers
+  int16 **chs = new int16*[7];
+
+  for(int i=0;i<7;i++)  chs[i] = new int16[MAXBUFFER];
+  int *chsgps = new int[100];
+
+  int elements[8] = {0,0,0,0,0,0,0,0};
+
+  spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_LEN,  &g_AvailUser);
+  spcm_dwGetParam_i64 (hCardDigi, SPC_DATA_AVAIL_USER_POS,  &g_PCPos);
+
+  g_Len = g_Notify_size_MB;
+
+  // we take care not to go across the end of the buffer, handling the wrap-around
+  if ((g_PCPos + g_Len) >= g_BufferSize_GB) g_Len = g_BufferSize_GB - g_PCPos;
+
+  //Make operation with data from shared memory
+  int threshold = int(50./channelrange_6*32767);       //This should be 0.5 V
+  int gapslope = 1000;
+  bool start = false;
+  bool process6 = false;
+  int count_fill = 0; 
+  int returncheck = -1;
+  int16 checkarray[3];
+
+  for(int i=0;i<g_Len/2;i++)
+  {
+    if(i%8!=7)
+    {
+      if(i%8==6)
+      {
+        if(debug_ch6)
+        {
+          chs[6][elements[6]] = pDigiMem[g_PCPos/2+i];
+          elements[6]++;
+        }
+
+        if(process6)
+        {
+          checkarray[0] = checkarray[1];
+          checkarray[1] = checkarray[2];
+          checkarray[2] = pDigiMem[g_PCPos/2+i];
+          returncheck = find_GPS(checkarray, threshold, gapslope, start);
+
+          if(returncheck==0)
+          {
+            chsgps[elements[7]] = i/8-1;
+            elements[7]++;
+          }
+          if(returncheck==1)
+          {
+            chsgps[elements[7]] = i/8-1-chsgps[elements[7]-1];      //you put the length of the interval (the stop found - the start found previously)
+            elements[7]++;
+            if(chsgps[elements[7]-1]>4950)
+                process6 = false;
+          }
+        }
+
+        if(count_fill<3)
+        {
+          checkarray[count_fill] = pDigiMem[g_PCPos/2+i];
+          count_fill++;
+          if(count_fill==3)
+          {
+            returncheck = find_GPS(checkarray, threshold, gapslope, start);
+
+            if(returncheck==0)
+            {
+              chsgps[elements[7]] = i-1;
+              elements[7]++;
+            }
+            if(returncheck==1)
+            {
+              chsgps[elements[7]] = i-1-chsgps[elements[7]-1];      //you put the length of the interval (the stop found - the start found previously)
+              elements[7]++;
+            }
+            process6 = true;
+          }
+            
+        }
+
+      }
+      else
+      {
+        chs[i%8][elements[i%8]] = pDigiMem[g_PCPos/2+i];
+        elements[i%8]++;
+      }
+    }
+  }
+
+  //operations on channel 6 GPS
+  /*
+  for(int i=1;i<elements[6]-1;i++)
+  {
+
+    if(chs[6][i]>threshold)
+    {
+      if(!start)      //if you haven't found a starting point look for a start
+      {
+        if( (chs[6][i+1]-chs[6][i]>gapslope) && (chs[6][i]-chs[6][i-1]>gapslope) )    //condition to say this is the risetime
+        {
+          cerr<<"start "<<i<<endl;
+          chsgps[elements[7]] = i;
+          elements[7]++;
+          start = true;
+        }
+      }
+      else        //if you haven't found a starting point don't look for a stop
+      {
+        if( (chs[6][i+1]-chs[6][i]<-gapslope) && (chs[6][i]-chs[6][i-1]<-gapslope) )    //condition to say this is the risetime
+        {
+          cerr<<"stop "<<i-chsgps[elements[7]-1]<<endl;
+          chsgps[elements[7]] = i-chsgps[elements[7]-1];      //you put the length of the interval (the stop found - the start found previously)
+          elements[7]++;
+          start = false;
+        }
+      }
+    }
+  }
+  */
+
+
+  g_transfered+=g_Notify_size_MB/1024/1024;
+  if(g_transfered%4096==0) cm_msg(MINFO,"Data","Data collected: %d MB",g_transfered);
+  // buffer is free for DMA transfer again
+  spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)g_Len);
+  
+  
   /* init bank structure */
   bk_init32(pevent);
+  INT defaultEvSize = bk_size(pevent);
+  WORD* pdata16 = NULL;
+  WORD* pdata32 = NULL;
+
+  bk_create(pevent, "SPE0", TID_WORD, (void**)&pdata16);
+  memcpy(pdata16,chs[0],elements[0]*2);
+  bk_close(pevent,(char*)pdata16 + (elements[0]*2) );
+
+  bk_create(pevent, "SPE1", TID_WORD, (void**)&pdata16);
+  memcpy(pdata16,chs[1],elements[1]*2);
+  bk_close(pevent,(char*)pdata16 + (elements[1]*2) );
+
+  bk_create(pevent, "SPE2", TID_WORD, (void**)&pdata16);
+  memcpy(pdata16,chs[2],elements[2]*2);
+  bk_close(pevent,(char*)pdata16 + (elements[2]*2) );
+
+  bk_create(pevent, "SPE3", TID_WORD, (void**)&pdata16);
+  memcpy(pdata16,chs[3],elements[3]*2);
+  bk_close(pevent,(char*)pdata16 + (elements[3]*2) );
+
+  bk_create(pevent, "SPE4", TID_WORD, (void**)&pdata16);
+  memcpy(pdata16,chs[4],elements[4]*2);
+  bk_close(pevent,(char*)pdata16 + (elements[4]*2) );
+
+  bk_create(pevent, "SPE5", TID_WORD, (void**)&pdata16);
+  memcpy(pdata16,chs[5],elements[5]*2);
+  bk_close(pevent,(char*)pdata16 + (elements[5]*2) );
+
+  if(debug_ch6)
+  {
+    bk_create(pevent, "SPE6", TID_WORD, (void**)&pdata16);    //only debug for GPS at the beginning
+    memcpy(pdata16,chs[6],elements[6]*2);
+    bk_close(pevent,(char*)pdata16 + (elements[6]*2) );
+  }
+
+  bk_create(pevent, "SPGP", TID_DWORD, (void**)&pdata32);
+  memcpy(pdata32,chsgps,elements[7]*sizeof(int));
+  bk_close(pevent,(char*)pdata32 + (elements[7]*sizeof(int)) );
+  
+  
+  //////MAYBE : Here checks if the header structure of the bank is as the initialisation done few lines above
+  if (bk_size(pevent)==defaultEvSize ) {
+    for(int i=0;i<7;i++) delete chs[i];
+    delete chs; 
+    delete chsgps;
+    return 0; 
+  }
+
+  for(int i=0;i<7;i++) delete chs[i];
+  delete chs; 
+  delete chsgps;
+  return bk_size(pevent);
+
+
+  //old way
+  /* init bank structure */
+  /*bk_init32(pevent);
   INT defaultEvSize = bk_size(pevent);
   WORD* pdata16 = NULL;
   bk_create(pevent, "SPEC", TID_WORD, (void**)&pdata16);
@@ -465,8 +665,8 @@ INT read_event(char *pevent, INT off)
 
   g_transfered+=g_Notify_size_MB/1024/1024;
   if(g_transfered%4096==0) cm_msg(MINFO,"Data","Data collected: %d MB",g_transfered);
-  
   memcpy(pdata16,((char*)pDigiMem)+g_PCPos,g_Len);
+
   // buffer is free for DMA transfer again
   spcm_dwSetParam_i32 (hCardDigi, SPC_DATA_AVAIL_CARD_LEN,  (int32)g_Len);
 
@@ -476,7 +676,9 @@ INT read_event(char *pevent, INT off)
   //////MAYBE : Here checks if the header structure of the bank is as the initialisation done few lines above
   if (bk_size(pevent)==defaultEvSize ) { return 0; }
   return bk_size(pevent);
-
+  */
+  //end old way
+  
 }
 
 ///////CUSTOM ROUTINES
@@ -520,4 +722,34 @@ INT StopAcq()
     return FE_ERR_HW;
   }
   return SUCCESS;
+}
+
+int find_GPS(const int16(checkarray)[] , const int threshold, const int gapslope, bool& start)
+{
+  if(checkarray[1]>threshold)
+  {
+    if(!start)      //if you haven't found a starting point look for a start
+    {
+      if( (checkarray[2]-checkarray[1]>gapslope) && (checkarray[1]-checkarray[0]>gapslope) )    //condition to say this is the risetime
+      {
+        //cerr<<"start!!!"<<endl;
+        //chsgps[elements[7]] = i;
+        //elements[7]++;
+        start = true;
+        return 0;
+      }
+    }
+    else        //if you haven't found a starting point don't look for a stop
+    {
+      if( (checkarray[2]-checkarray[1]<-gapslope) && (checkarray[1]-checkarray[0]<-gapslope) )    //condition to say this is the risetime
+      {
+        //cerr<<"stop!!!!"<<endl;
+        //chsgps[elements[7]] = i-chsgps[elements[7]-1];      //you put the length of the interval (the stop found - the start found previously)
+        //elements[7]++;
+        start = false;
+        return 1;
+      }
+    }
+  }
+  return -1;
 }
